@@ -76,3 +76,62 @@ public MaximoAssetPayload Map(
         AssetSpec = BuildAssetSpecifications(source)
     };
 }
+
+
+
+private static MaximoServiceAddress[]?
+    BuildServiceAddress(
+        ValveInspectionEvent source)
+{
+    if (source.ServiceAddress is not { Length: > 0 })
+    {
+        return null;
+    }
+
+    var addresses =
+        new List<MaximoServiceAddress>(
+            source.ServiceAddress.Length);
+
+    foreach (var sourceAddress in source.ServiceAddress)
+    {
+        if (sourceAddress is null)
+        {
+            continue;
+        }
+
+        // Supports both "streetAddress" and "address".
+        var streetAddress =
+            MapperValue.Clean(sourceAddress.StreetAddress) ??
+            MapperValue.Clean(sourceAddress.Address);
+
+        var city =
+            MapperValue.Clean(sourceAddress.City);
+
+        var stateProvince =
+            MapperValue.Clean(sourceAddress.State);
+
+        var postalCode =
+            MapperValue.Clean(sourceAddress.ZipCode);
+
+        if (streetAddress is null &&
+            city is null &&
+            stateProvince is null &&
+            postalCode is null)
+        {
+            continue;
+        }
+
+        addresses.Add(
+            new MaximoServiceAddress
+            {
+                StreetAddress = streetAddress,
+                City = city,
+                StateProvince = stateProvince,
+                PostalCode = postalCode
+            });
+    }
+
+    return addresses.Count == 0
+        ? null
+        : addresses.ToArray();
+}
