@@ -1,3 +1,86 @@
+for ValveSpatialRegistration
+
+{
+    "eventTimestamp": "2026-07-29T15:39:00Z",
+    "action": "ValveSpatialRegistration",
+    "globalId": "{8D7B8F91-7A4A-4EAB-BB0A-4A8E9E79E7CB}",
+    "lifeCycleStatus": "2",
+    "physicalValveId": "NYC-VLV-100234",
+    "serviceTerritoryName": "MA Boston West I&R",
+    "installationdate": "2026-07-29",
+    "classification": "System",
+    "regulatoryType": "Distribution",
+    "isCriticalValve": "Yes",
+    "isSectionalizingValve": "No",
+    "isEGOMPValve": "No",
+    "isInterconnectValve": "Yes",
+    "isAutomaticShutoffValve": "No",
+    "isRemoteOperatedValve": "No",
+    "isRuptureMitigationValve": "No",
+    "isLowPressureValve": "Yes",
+    "crossingType": "River",
+    "accessType": "Vault",
+    "normalPosition": "Normally Open",
+    "subSystemName": "Yes",
+    "subSystemPressure": "Yes",
+    "serviceAddress": [
+        {
+            "address": "123 Main St, Boston, MA 02134",
+            "city": "Boston",
+            "state": "MA",
+            "zipCode": "02134"
+        }
+    ]
+}
+==========================
+for ValveFeatureRetired
+{	
+	"eventTimestamp": "2026-07-29T15:39:00Z",
+	"action": "ValveFeatureRetired",
+	"globalId": "{8D7B8F91-7A4A-4EAB-BB0A-4A8E9E79E7CB}",
+	"maximoAssetNumber": "10124657",
+	"physicalValveId": "NYC-VLV-100234",
+	"lifeCycleStatus": "5",
+	"lifeCycleEndDate": "2026-07-29"
+}	
+
+=======================
+for ValveFeatureChanged
+{
+  "eventTimestamp": "2026-07-29T15:39:00Z",
+  "action": "ValveFeatureChanged",
+  "globalId": "{8D7B8F91-7A4A-4EAB-BB0A-4A8E9E79E7CB}",
+  "maximoAssetNumber": "10124657",
+  "physicalValveId": "NYC-VLV-100234",
+  "lifeCycleStatus": "3",
+  "serviceTerritoryName": "MA Boston West I&R",
+  "installationDate": "2026-07-29",
+  "classification": "System",
+  "regulatoryType": "Distribution",
+  "isCriticalValve": "Yes",
+  "isSectionalizingValve": "No",
+  "isEGOMPValve": "No",
+  "isInterconnectValve": "Yes",
+  "isAutomaticShutoffValve": "No",
+  "isRemoteOperatedValve": "No",
+  "isRuptureMitigationValve": "No",
+  "isLowPressureValve": "Yes",
+  "crossingType": "Railroad",
+  "accessType": "Yes",
+  "normalPosition": "Yes",
+  "subSystemName": "WALTHAM_MP_ZONE_A",
+  "subSystemPressure": "MEDIUM",
+  "serviceAddress": [
+    {
+      "streetAddress": "123 Main St",
+      "city": "Boston",
+      "state": "MA",
+      "zipCode": "02134"
+    }
+  ]
+}
+
+Based on the above payload, modify the following code. 
 using System.Globalization;
 using GaValveInspectionGisMaximo.Configuration;
 using GaValveInspectionGisMaximo.Contracts;
