@@ -1,1 +1,78 @@
 
+public MaximoAssetPayload Map(
+    ValveInspectionEvent source)
+{
+    ArgumentNullException.ThrowIfNull(source);
+
+    var action = MapperValue.Required(
+        source.Action,
+        nameof(source.Action));
+
+    var isRegistration = string.Equals(
+        action,
+        ValveActions.ValveSpatialRegistration,
+        StringComparison.OrdinalIgnoreCase);
+
+    var isChanged = string.Equals(
+        action,
+        ValveActions.ValveFeatureChanged,
+        StringComparison.OrdinalIgnoreCase);
+
+    var isRetired = string.Equals(
+        action,
+        ValveActions.ValveFeatureRetired,
+        StringComparison.OrdinalIgnoreCase);
+
+    if (!isRegistration &&
+        !isChanged &&
+        !isRetired)
+    {
+        throw new InvalidOperationException(
+            $"Unsupported GIS-to-Maximo action '{action}'.");
+    }
+
+    return new MaximoAssetPayload
+    {
+        NgGuid = MapperValue.Required(
+            source.GlobalId,
+            nameof(source.GlobalId)),
+
+        Status = EventTypeLookup.GetRequired(
+            _valveEventTypes,
+            action),
+
+        AssetNum = isRegistration
+            ? null
+            : MapperValue.Required(
+                source.MaximoAssetNumber,
+                nameof(source.MaximoAssetNumber)),
+
+        AssetTag = MapperValue.Required(
+            source.PhysicalValveId,
+            nameof(source.PhysicalValveId)),
+
+        ServiceTerritory = isRetired
+            ? null
+            : MapperValue.Required(
+                source.ServiceTerritoryName,
+                nameof(source.ServiceTerritoryName)),
+
+        HierarchyPath = isRetired
+            ? null
+            : MapperValue.Required(
+                source.Classification,
+                nameof(source.Classification)),
+
+        InstallDate = isRetired
+            ? null
+            : MapperValue.NormalizeOptionalDate(
+                source.InstallationDate,
+                nameof(source.InstallationDate)),
+
+        ServiceAddress = isRetired
+            ? null
+            : BuildServiceAddress(source),
+
+        AssetSpec = BuildAssetSpecifications(source)
+    };
+}
