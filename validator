@@ -1,0 +1,167 @@
+using System.Globalization;
+using GaValveInspectionGisMaximo.Contracts;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IValveEventValidator
+{
+    IReadOnlyList<string> Validate(string messageType, ValveInspectionEvent payload);
+    void ValidateAndThrow(string messageType, ValveInspectionEvent payload);
+}
+
+public sealed class ValveEventValidator : IValveEventValidator
+{
+    private static readonly IReadOnlySet<string> LifeCycleStatuses =
+        new HashSet<string>(["1", "2", "3", "4", "5", "6"], StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlySet<string> Classifications =
+        new HashSet<string>(["System", "Service", "Station"], StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlySet<string> RegulatoryTypes =
+        new HashSet<string>(
+            ["Distribution", "Transmission", "Transmission Operated Distribution"],
+            StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlySet<string> CrossingTypes =
+        new HashSet<string>(["Railroad", "River", "Highway"], StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlySet<string> YesNo =
+        new HashSet<string>(["Yes", "No"], StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<string> Validate(string messageType, ValveInspectionEvent payload)
+    {
+        var errors = new List<string>();
+
+        if (!MessageTypes.TryNormalize(messageType, out var normalizedMessageType))
+        {
+            errors.Add("messageType must be GIS_TO_MAXIMO or MAXIMO_TO_GIS.");
+            return errors;
+        }
+
+        Require(payload.Action, "action", errors);
+        Require(payload.GlobalId, "globalId", errors);
+
+        if (payload.EventTimestamp is null)
+        {
+            errors.Add("eventTimestamp is required.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(payload.GlobalId) && !Guid.TryParse(payload.GlobalId, out _))
+        {
+            errors.Add("globalId must be a valid GUID, with or without braces.");
+        }
+
+        if (normalizedMessageType == MessageTypes.GisToMaximo)
+        {
+            ValidateGisToMaximo(payload, errors);
+        }
+        else
+        {
+            ValidateMaximoToGis(payload, errors);
+        }
+
+        ValidateDate(payload.InstallationDate, "installationdate", errors);
+        ValidateDate(payload.LifecycleEndDate, "lifecycleEndDate", errors);
+        ValidateAllowed(payload.Classification, "classification", Classifications, errors);
+        ValidateAllowed(payload.RegulatoryType, "regulatoryType", RegulatoryTypes, errors);
+        ValidateAllowed(payload.CrossingType, "crossingType", CrossingTypes, errors);
+
+        ValidateYesNo(payload.IsCriticalValve, "isCriticalValve", errors);
+        ValidateYesNo(payload.IsSectionalizingValve, "isSectionalizingValve", errors);
+        ValidateYesNo(payload.IsEgompValve, "isEGOMPValve", errors);
+        ValidateYesNo(payload.IsInterconnectValve, "isInterconnectValve", errors);
+        ValidateYesNo(payload.IsAutomaticShutoffValve, "isAutomaticShutoffValve", errors);
+        ValidateYesNo(payload.IsRemoteOperatedValve, "isRemoteOperatedValve", errors);
+        ValidateYesNo(payload.IsRuptureMitigationValve, "isRuptureMitigationValve", errors);
+        ValidateYesNo(payload.IsLowPressureValve, "isLowPressureValve", errors);
+
+        return errors;
+    }
+
+    public void ValidateAndThrow(string messageType, ValveInspectionEvent payload)
+    {
+        var errors = Validate(messageType, payload);
+        if (errors.Count > 0)
+        {
+            throw new ValveValidationException(errors);
+        }
+    }
+
+    private static void ValidateGisToMaximo(ValveInspectionEvent payload, ICollection<string> errors)
+    {
+        ValidateAction(payload.Action, ValveActions.GisToMaximo, MessageTypes.GisToMaximo, errors);
+        Require(payload.PhysicalValveId, "physicalValveId", errors);
+
+        if (!string.IsNullOrWhiteSpace(payload.LifeCycleStatus) && !LifeCycleStatuses.Contains(payload.LifeCycleStatus))
+        {
+            errors.Add("lifeCycleStatus must be one of 1, 2, 3, 4, 5, or 6.");
+        }
+
+        if (string.Equals(payload.Action, ValveActions.ValveFeatureRetired, StringComparison.OrdinalIgnoreCase))
+        {
+           
+            Require(payload.LifecycleEndDate, "lifecycleEndDate", errors);
+        }
+    }
+
+    private static void ValidateMaximoToGis(ValveInspectionEvent payload, ICollection<string> errors)
+    {
+        ValidateAction(payload.Action, ValveActions.MaximoToGis, MessageTypes.MaximoToGis, errors);
+        Require(payload.PhysicalValveId, "physicalValveId", errors);
+    }
+
+    private static void ValidateAction(
+        string? action,
+        IReadOnlySet<string> allowed,
+        string messageType,
+        ICollection<string> errors)
+    {
+        if (!string.IsNullOrWhiteSpace(action) && !allowed.Contains(action))
+        {
+            errors.Add($"action '{action}' is not valid for {messageType}.");
+        }
+    }
+
+    private static void ValidateDate(string? value, string field, ICollection<string> errors)
+    {
+        if (!string.IsNullOrWhiteSpace(value) &&
+            !DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+        {
+            errors.Add($"{field} must use YYYY-MM-DD format.");
+        }
+    }
+
+    private static void ValidateAllowed(
+        string? value,
+        string field,
+        IReadOnlySet<string> allowed,
+        ICollection<string> errors)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && !allowed.Contains(value))
+        {
+            errors.Add($"{field} has an unsupported value.");
+        }
+    }
+
+    private static void ValidateYesNo(string? value, string field, ICollection<string> errors) =>
+        ValidateAllowed(value, field, YesNo, errors);
+
+    private static void Require(string? value, string field, ICollection<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            errors.Add($"{field} is required.");
+        }
+    }
+}
+
+public sealed class ValveValidationException : Exception
+{
+    public ValveValidationException(IReadOnlyList<string> errors)
+        : base("The valve inspection message failed validation.")
+    {
+        Errors = errors;
+    }
+
+    public IReadOnlyList<string> Errors { get; }
+}
