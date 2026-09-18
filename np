@@ -1,0 +1,4826 @@
+namespace GaValveInspectionGisMaximo.Configuration;
+
+public sealed class DownstreamOptions
+{
+    public string MaximoHost { get; init; } = string.Empty;
+    public string MaximoValveInspectionPath { get; init; } = string.Empty;
+    public string MaximoBasicAuth { get; init; } = string.Empty;
+    public int MaximoTimeoutSeconds { get; init; } = 60;
+
+    public string GisHost { get; init; } = string.Empty;
+    public string GisValveInspectionPath { get; init; } = string.Empty;
+    public string GisTokenPath { get; init; } = string.Empty;
+    public string GisUsername { get; init; } = string.Empty;
+    public string GisPassword { get; init; } = string.Empty;
+    public string GisReferer { get; init; } = string.Empty;
+    public string GisTokenClient { get; init; } = "requestip";
+    public int GisTokenExpirationMinutes { get; init; } = 60;
+    public int GisTokenRefreshSkewMinutes { get; init; } = 5;
+    public int GisTimeoutSeconds { get; init; } = 60;
+    public string GisPayloadParameterName { get; init; } = "eventPayload";
+    public int GisTokenMaxAttempts { get; init; } = 3;
+    public int GisTokenFirstDelaySeconds { get; init; } = 5;
+    public double GisTokenBackoffCoefficient { get; init; } = 2.0;
+    public int GisTokenMaxDelaySeconds { get; init; } = 30;
+    public int GisTokenRetryTimeoutSeconds { get; init; } = 120;
+
+    public Dictionary<string, string> ValveEventType { get; init; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public int MaxAttempts { get; init; } = 4;
+    public int FirstDelaySeconds { get; init; } = 2;
+    public double BackoffCoefficient { get; init; } = 2;
+    public int MaxDelaySeconds { get; init; } = 30;
+    public int RetryTimeoutSeconds { get; init; } = 180;
+}
+
+
+
+
+
+==================
+namespace GaValveInspectionGisMaximo.Configuration;
+
+public sealed class ValveIntegrationOptions
+{
+    public const string SectionName = "ValveInspection";
+
+    public ServiceBusOptions ServiceBus { get; init; } = new();
+    public MappingOptions Mapping { get; init; } = new();
+    public RequestOptions Request { get; init; } = new();
+}
+
+public sealed class ServiceBusOptions
+{
+    public string FullyQualifiedNamespace { get; init; } = string.Empty;
+    public string TopicName { get; init; } = string.Empty;
+    public string TransportType { get; init; } = "AmqpWebSockets";
+    public int MessageTimeToLiveMinutes { get; init; } = 1_440;
+}
+
+public sealed class MappingOptions
+{
+    public Dictionary<string, string> AccessType { get; init; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, string> NormalPosition { get; init; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public MappingDefaults Defaults { get; init; } = new();
+}
+
+public sealed class MappingDefaults
+{
+    public string? SerialNumber { get; init; }
+    public string? StreetAddress { get; init; }
+    public string? City { get; init; }
+    public string? State { get; init; }
+    public string? PostalCode { get; init; }
+}
+
+public sealed class RequestOptions
+{
+    public int MaxBodyBytes { get; init; } = 262_144;
+}
+
+
+
+
+
+
+=========================
+using System.Text.Json.Serialization;
+
+namespace GaValveInspectionGisMaximo.Contracts;
+
+public sealed class GisValvePayload
+
+{
+
+    [JsonPropertyName("eventTimestamp")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public DateTimeOffset? EventTimestamp { get; init; }
+
+    [JsonPropertyName("action")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? Action { get; init; }
+
+    [JsonPropertyName("status")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? Status { get; init; }
+
+    [JsonPropertyName("globalId")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? GlobalId { get; init; }
+
+    [JsonPropertyName("assetId")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? AssetId { get; init; }
+
+    [JsonPropertyName("lifeCycleStatus")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? LifeCycleStatus { get; init; }
+
+    [JsonPropertyName("physicalValveId")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? PhysicalValveId { get; init; }
+
+    [JsonPropertyName("serviceTerritoryName")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? ServiceTerritoryName { get; init; }
+
+    [JsonPropertyName("installationDate")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? InstallationDate { get; init; }
+
+    [JsonPropertyName("classification")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? Classification { get; init; }
+
+    [JsonPropertyName("regulatoryType")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? RegulatoryType { get; init; }
+
+    [JsonPropertyName("isCriticalValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsCriticalValve { get; init; }
+
+    [JsonPropertyName("isSectionalizingValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsSectionalizingValve { get; init; }
+
+    [JsonPropertyName("isEGOMPValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsEgompValve { get; init; }
+
+    [JsonPropertyName("isInterconnectValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsInterconnectValve { get; init; }
+
+    [JsonPropertyName("isAutomaticShutoffValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsAutomaticShutoffValve { get; init; }
+
+    [JsonPropertyName("isRemoteOperatedValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsRemoteOperatedValve { get; init; }
+
+    [JsonPropertyName("isRuptureMitigationValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsRuptureMitigationValve { get; init; }
+
+    [JsonPropertyName("isLowPressureValve")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? IsLowPressureValve { get; init; }
+
+    [JsonPropertyName("crossingType")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? CrossingType { get; init; }
+
+    [JsonPropertyName("accessType")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? AccessType { get; init; }
+
+    [JsonPropertyName("normalPosition")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? NormalPosition { get; init; }
+
+    [JsonPropertyName("subSystemName")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? SubSystemName { get; init; }
+
+    [JsonPropertyName("subSystemPressure")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? SubSystemPressure { get; init; }
+
+    [JsonPropertyName("address")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? Address { get; init; }
+
+    [JsonPropertyName("city")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? City { get; init; }
+
+    [JsonPropertyName("state")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? State { get; init; }
+
+    [JsonPropertyName("zipCode")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? ZipCode { get; init; }
+
+    [JsonPropertyName("lifecycleEndDate")]
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+
+    public string? LifecycleEndDate { get; init; }
+
+}
+
+
+======================
+
+namespace GaValveInspectionGisMaximo.Contracts;
+
+public sealed record WorkflowRetryPolicy(
+
+    int MaxAttempts,
+    int FirstDelaySeconds,
+    double BackoffCoefficient,
+    int MaxDelaySeconds,
+    int TimeoutSeconds);
+
+public sealed record ValveInspectionMessage(
+    string MessageType,
+    string CorrelationId,
+    DateTimeOffset ReceivedAtUtc,
+    ValveInspectionEvent Payload,
+    WorkflowRetryPolicy? RetryPolicy = null);
+
+public sealed record MaximoSendCommand(
+    string CorrelationId,
+    string Action,
+    MaximoAssetPayload Payload);
+
+public sealed record GisSendCommand(
+    string CorrelationId,
+    string Action,
+    GisValvePayload Payload);
+
+public sealed record IntegrationResult(
+
+    string Status,
+    string MessageType,
+    string CorrelationId,
+    string Action,
+    string Target,
+    int HttpStatusCode,
+
+    DateTimeOffset CompletedAtUtc);
+
+
+===========================
+
+
+using System.Text.Json.Serialization;
+
+namespace GaValveInspectionGisMaximo.Contracts;
+
+public sealed class MaximoAssetPayload
+{
+   [JsonPropertyName("NG_GUID")]
+   public required string NgGuid { get; init; }
+
+   [JsonPropertyName("STATUS")]
+   public required string Status { get; init; }
+
+   [JsonPropertyName("ASSETNUM")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? AssetNum { get; init; }
+
+   [JsonPropertyName("ASSETTAG")]
+   public required string AssetTag { get; init; }
+
+   [JsonPropertyName("NG_SERVTERRITORY")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? ServiceTerritory { get; init; }
+
+   [JsonPropertyName("HIERARCHYPATH")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? HierarchyPath { get; init; }
+
+   [JsonPropertyName("INSTALLDATE")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? InstallDate { get; init; }
+
+   [JsonPropertyName("SERVICEADDRESS")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public MaximoServiceAddress[]? ServiceAddress { get; init; }
+
+   [JsonPropertyName("ASSETSPEC")]
+   public required MaximoAssetSpecification[] AssetSpec { get; init; }
+}
+
+public sealed class MaximoServiceAddress
+{
+   [JsonPropertyName("STREETADDRESS")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? StreetAddress { get; init; }
+
+   [JsonPropertyName("CITY")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? City { get; init; }
+
+   [JsonPropertyName("STATEPROVINCE")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? StateProvince { get; init; }
+
+   [JsonPropertyName("POSTALCODE")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? PostalCode { get; init; }
+}
+
+public sealed class MaximoAssetSpecification
+{
+   [JsonPropertyName("ALNVALUE")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? AlnValue { get; init; }
+
+   [JsonPropertyName("DATEVALUE")]
+   [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+   public string? DateValue { get; init; }
+
+   [JsonPropertyName("ASSETATTRID")]
+   public required string AssetAttributeId { get; init; }
+}
+
+
+namespace GaValveInspectionGisMaximo.Contracts;
+public static class MessageTypes
+{
+    public const string GisToMaximo = "GisToMaximo";
+    public const string MaximoToGis = "MaximoToGis";
+
+    public static bool TryNormalize(string? value, out string normalized)
+    {
+        normalized = value?.Trim().Replace('-', '_').ToUpperInvariant() switch
+        {
+            "GIS_TO_MAXIMO" or "GISTOMAXIMO" => GisToMaximo,
+            "MAXIMO_TO_GIS" or "MAXIMOTOGIS" => MaximoToGis,
+            _ => string.Empty
+        };
+
+        return normalized.Length > 0;
+    }
+
+    public static bool TryFromRoute(string? value, out string messageType)
+    {
+        messageType = value?.Trim().ToLowerInvariant() switch
+        {
+            "gis-to-maximo" => GisToMaximo,
+            "maximo-to-gis" => MaximoToGis,
+            _ => string.Empty
+        };
+
+        return messageType.Length > 0;
+    }
+}
+
+===================
+using System.Text.Json.Serialization;
+
+namespace GaValveInspectionGisMaximo.Contracts;
+
+public sealed record ValveInspectionEvent
+{
+    [JsonPropertyName("ASSETNUM")]
+    public string? MaximoAssetNumberFromMaximo { get; init; }
+    [JsonPropertyName("NG_GUID")]
+    public string? GlobalIdFromMaximo { get; init; }
+    [JsonPropertyName("ASSETTAG")]
+    public string? AssetTagFromMaximo { get; init; }
+    [JsonPropertyName("eventTimestamp")]
+    public DateTimeOffset? EventTimestamp { get; init; }
+
+    [JsonPropertyName("action")]
+    public string? Action { get; init; }
+
+    [JsonPropertyName("globalId")]
+    public string? GlobalId { get; init; }
+
+    [JsonPropertyName("assetId")]
+    public string? AssetId { get; init; }
+
+    [JsonPropertyName("maximoAssetNumber")]
+    public string? MaximoAssetNumber { get; init; }
+
+    [JsonPropertyName("lifeCycleStatus")]
+    public string? LifeCycleStatus { get; init; }
+
+    [JsonPropertyName("physicalValveId")]
+    public string? PhysicalValveId { get; init; }
+
+    [JsonPropertyName("serviceTerritoryName")]
+    public string? ServiceTerritoryName { get; init; }
+
+    [JsonPropertyName("installationDate")]
+    public string? InstallationDate { get; init; }
+
+    [JsonPropertyName("classification")]
+    public string? Classification { get; init; }
+
+    [JsonPropertyName("regulatoryType")]
+    public string? RegulatoryType { get; init; }
+
+    [JsonPropertyName("isCriticalValve")]
+    public string? IsCriticalValve { get; init; }
+
+    [JsonPropertyName("isSectionalizingValve")]
+    public string? IsSectionalizingValve { get; init; }
+
+    [JsonPropertyName("isEGOMPValve")]
+    public string? IsEgompValve { get; init; }
+
+    [JsonPropertyName("isInterconnectValve")]
+    public string? IsInterconnectValve { get; init; }
+
+    [JsonPropertyName("isAutomaticShutoffValve")]
+    public string? IsAutomaticShutoffValve { get; init; }
+
+    [JsonPropertyName("isRemoteOperatedValve")]
+    public string? IsRemoteOperatedValve { get; init; }
+
+    [JsonPropertyName("isRuptureMitigationValve")]
+    public string? IsRuptureMitigationValve { get; init; }
+
+    [JsonPropertyName("isLowPressureValve")]
+    public string? IsLowPressureValve { get; init; }
+
+    [JsonPropertyName("crossingType")]
+    public string? CrossingType { get; init; }
+
+    [JsonPropertyName("accessType")]
+    public string? AccessType { get; init; }
+
+    [JsonPropertyName("normalPosition")]
+    public string? NormalPosition { get; init; }
+
+    [JsonPropertyName("subSystemName")]
+    public string? SubSystemName { get; init; }
+
+    [JsonPropertyName("subSystemPressure")]
+    public string? SubSystemPressure { get; init; }
+
+    [JsonPropertyName("serviceAddress")]
+    public ValveServiceAddress[]? ServiceAddress { get; init; }
+
+    // Retained for the existing Maximo-to-GIS payload.
+    [JsonPropertyName("address")]
+    public string? Address { get; init; }
+
+    [JsonPropertyName("city")]
+    public string? City { get; init; }
+
+    [JsonPropertyName("state")]
+    public string? State { get; init; }
+
+    [JsonPropertyName("zipCode")]
+    public string? ZipCode { get; init; }
+
+    [JsonPropertyName("lifecycleEndDate")]
+    public string? LifecycleEndDate { get; init; }
+}
+
+public sealed record ValveServiceAddress
+{
+    [JsonPropertyName("address")]
+    public string? Address { get; init; }
+
+    [JsonPropertyName("streetAddress")]
+    public string? StreetAddress { get; init; }
+
+    [JsonPropertyName("city")]
+    public string? City { get; init; }
+
+    [JsonPropertyName("state")]
+    public string? State { get; init; }
+
+    [JsonPropertyName("zipCode")]
+    public string? ZipCode { get; init; }
+}
+
+
+===============
+using System.Text.Json;
+using Azure.Messaging.ServiceBus;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using GaValveInspectionGisMaximo.Services;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.DurableTask.Client;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Functions;
+
+public sealed class CommonValveInspectionSubscriber
+{
+   private const string MessageTypeProperty = "messageType";
+   private const string CorrelationIdProperty = "x-correlation-id";
+
+   private const int MaximumDeadLetterDescriptionLength = 4_096;
+
+   private readonly IValveEventValidator _validator;
+   private readonly DownstreamOptions _options;
+   private readonly ILogger<CommonValveInspectionSubscriber> _logger;
+
+   public CommonValveInspectionSubscriber(
+       IValveEventValidator validator,
+       IOptions<DownstreamOptions> options,
+       ILogger<CommonValveInspectionSubscriber> logger)
+   {
+       ArgumentNullException.ThrowIfNull(validator);
+       ArgumentNullException.ThrowIfNull(options);
+       ArgumentNullException.ThrowIfNull(options.Value);
+       ArgumentNullException.ThrowIfNull(logger);
+
+       _validator = validator;
+       _options = options.Value;
+       _logger = logger;
+   }
+
+   [Function(FunctionNames.CommonValveInspectionSubscriber)]
+   public async Task RunAsync(
+       [ServiceBusTrigger(
+           "%ServiceBusTopicName%",
+           "%ServiceBusSubscriptionName%",
+           Connection = "ServiceBusConnection",
+           AutoCompleteMessages = false)]
+       ServiceBusReceivedMessage receivedMessage,
+       ServiceBusMessageActions messageActions,
+       [DurableClient] DurableTaskClient durableClient,
+       CancellationToken cancellationToken)
+   {
+       ArgumentNullException.ThrowIfNull(receivedMessage);
+       ArgumentNullException.ThrowIfNull(messageActions);
+       ArgumentNullException.ThrowIfNull(durableClient);
+
+       var propertyMessageType = GetPropertyValue(
+           receivedMessage,
+           MessageTypeProperty);
+
+       _logger.LogInformation(
+           "Received valve inspection message. " +
+           "MessageId={MessageId}, SequenceNumber={SequenceNumber}, " +
+           "DeliveryCount={DeliveryCount}, " +
+           "CorrelationId={CorrelationId}, " +
+           "PropertyMessageType={PropertyMessageType}, " +
+           "Subject={Subject}",
+           receivedMessage.MessageId,
+           receivedMessage.SequenceNumber,
+           receivedMessage.DeliveryCount,
+           receivedMessage.CorrelationId ?? "<missing>",
+           propertyMessageType ?? "<missing>",
+           receivedMessage.Subject ?? "<missing>");
+
+       ValveInspectionMessage? message;
+
+       try
+       {
+           message = JsonSerializer.Deserialize<ValveInspectionMessage>(
+               receivedMessage.Body.ToMemory().Span,
+               JsonDefaults.Options);
+       }
+       catch (Exception exception)
+           when (exception is JsonException or NotSupportedException)
+       {
+           _logger.LogWarning(
+               exception,
+               "Unable to deserialize valve inspection message. " +
+               "MessageId={MessageId}, SequenceNumber={SequenceNumber}",
+               receivedMessage.MessageId,
+               receivedMessage.SequenceNumber);
+
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "InvalidJson",
+                   "The message body is not a valid valve inspection message.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (message is null)
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "EmptyEnvelope",
+                   "A valve inspection message envelope is required.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (message.Payload is null)
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "EmptyPayload",
+                   "A valve inspection payload is required.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       var correlationId = ResolveCorrelationId(
+           message.CorrelationId,
+           receivedMessage);
+
+       if (!MessageTypes.TryNormalize(
+               propertyMessageType,
+               out var normalizedPropertyMessageType))
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "InvalidRouting",
+                   $"The messageType application property " +
+                   $"'{propertyMessageType ?? "<missing>"}' is unsupported. " +
+                   $"Supported values are '{MessageTypes.GisToMaximo}' and " +
+                   $"'{MessageTypes.MaximoToGis}'.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (!MessageTypes.TryNormalize(
+               message.MessageType,
+               out var normalizedBodyMessageType))
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "InvalidBodyMessageType",
+                   $"The message body messageType " +
+                   $"'{message.MessageType ?? "<missing>"}' is unsupported. " +
+                   $"Supported values are '{MessageTypes.GisToMaximo}' and " +
+                   $"'{MessageTypes.MaximoToGis}'.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (!string.Equals(
+               normalizedPropertyMessageType,
+               normalizedBodyMessageType,
+               StringComparison.Ordinal))
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "MessageTypeMismatch",
+                   $"The Service Bus application property messageType " +
+                   $"'{normalizedPropertyMessageType}' does not match the " +
+                   $"body messageType '{normalizedBodyMessageType}'.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (!TryValidateSubject(
+               receivedMessage.Subject,
+               normalizedBodyMessageType,
+               out var subjectError))
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "SubjectMismatch",
+                   subjectError,
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       if (!TryResolveRoute(
+               normalizedBodyMessageType,
+               out var source,
+               out var target,
+               out var orchestratorName))
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "InvalidRouting",
+                   $"No orchestration route is configured for " +
+                   $"messageType '{normalizedBodyMessageType}'.",
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       _logger.LogInformation(
+           "Resolved valve inspection routing. " +
+           "MessageId={MessageId}, CorrelationId={CorrelationId}, " +
+           "BodyMessageType={BodyMessageType}, " +
+           "PropertyMessageType={PropertyMessageType}, " +
+           "Subject={Subject}, Source={Source}, Target={Target}, " +
+           "Orchestrator={Orchestrator}",
+           receivedMessage.MessageId,
+           correlationId,
+           normalizedBodyMessageType,
+           normalizedPropertyMessageType,
+           receivedMessage.Subject ?? "<missing>",
+           source,
+           target,
+           orchestratorName);
+
+       IReadOnlyCollection<string> validationErrors;
+
+       try
+       {
+           validationErrors = _validator.Validate(
+               normalizedBodyMessageType,
+               message.Payload);
+       }
+       catch (Exception exception)
+       {
+           _logger.LogError(
+               exception,
+               "Valve payload validation unexpectedly failed. " +
+               "MessageId={MessageId}, CorrelationId={CorrelationId}, " +
+               "MessageType={MessageType}",
+               receivedMessage.MessageId,
+               correlationId,
+               normalizedBodyMessageType);
+
+           throw;
+       }
+
+       if (validationErrors.Count > 0)
+       {
+           await DeadLetterAsync(
+                   receivedMessage,
+                   messageActions,
+                   "ValidationFailed",
+                   string.Join(' ', validationErrors),
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           return;
+       }
+
+       var orchestrationMessage = message with
+       {
+           MessageType = normalizedBodyMessageType,
+           CorrelationId = correlationId,
+           Payload = message.Payload,
+           ReceivedAtUtc =
+               message.ReceivedAtUtc == default
+                   ? DateTimeOffset.UtcNow
+                   : message.ReceivedAtUtc,
+           RetryPolicy = CreateRetryPolicy()
+       };
+
+       string instanceId;
+
+       try
+       {
+           instanceId = await durableClient
+               .ScheduleNewOrchestrationInstanceAsync(
+                   orchestratorName,
+                   orchestrationMessage,
+                   cancellationToken)
+               .ConfigureAwait(false);
+       }
+       catch (Exception exception)
+       {
+           _logger.LogError(
+               exception,
+               "Failed to schedule valve inspection orchestration. " +
+               "MessageId={MessageId}, CorrelationId={CorrelationId}, " +
+               "MessageType={MessageType}, " +
+               "Orchestrator={Orchestrator}",
+               receivedMessage.MessageId,
+               correlationId,
+               normalizedBodyMessageType,
+               orchestratorName);
+
+           // Do not complete or dead-letter the message here.
+           // Rethrowing allows Service Bus retry processing.
+           throw;
+       }
+
+       _logger.LogInformation(
+           "Started valve inspection orchestration. " +
+           "InstanceId={InstanceId}, MessageId={MessageId}, " +
+           "SequenceNumber={SequenceNumber}, " +
+           "MessageType={MessageType}, Source={Source}, " +
+           "Target={Target}, Action={Action}, " +
+           "CorrelationId={CorrelationId}",
+           instanceId,
+           receivedMessage.MessageId,
+           receivedMessage.SequenceNumber,
+           normalizedBodyMessageType,
+           source,
+           target,
+           message.Payload.Action,
+           correlationId);
+
+       await messageActions
+           .CompleteMessageAsync(
+               receivedMessage,
+               cancellationToken)
+           .ConfigureAwait(false);
+
+       _logger.LogInformation(
+           "Completed Service Bus message. " +
+           "MessageId={MessageId}, InstanceId={InstanceId}, " +
+           "MessageType={MessageType}, CorrelationId={CorrelationId}",
+           receivedMessage.MessageId,
+           instanceId,
+           normalizedBodyMessageType,
+           correlationId);
+   }
+
+   private WorkflowRetryPolicy CreateRetryPolicy()
+   {
+       return new WorkflowRetryPolicy(
+           MaxAttempts: _options.MaxAttempts,
+           FirstDelaySeconds: _options.FirstDelaySeconds,
+           BackoffCoefficient: _options.BackoffCoefficient,
+           MaxDelaySeconds: _options.MaxDelaySeconds,
+           TimeoutSeconds: _options.RetryTimeoutSeconds);
+   }
+
+   private static bool TryResolveRoute(
+       string messageType,
+       out string source,
+       out string target,
+       out string orchestratorName)
+   {
+       source = string.Empty;
+       target = string.Empty;
+       orchestratorName = string.Empty;
+
+       switch (messageType)
+       {
+           case MessageTypes.GisToMaximo:
+               source = "GIS";
+               target = "Maximo";
+               orchestratorName =
+                   FunctionNames.GisToMaximoOrchestrator;
+               return true;
+
+           case MessageTypes.MaximoToGis:
+               source = "Maximo";
+               target = "GIS";
+               orchestratorName =
+                   FunctionNames.MaximoToGisOrchestrator;
+               return true;
+
+           default:
+               return false;
+       }
+   }
+
+   private static bool TryValidateSubject(
+       string? subject,
+       string expectedMessageType,
+       out string error)
+   {
+       error = string.Empty;
+
+       // Subject is optional. APIM currently sets it through
+       // BrokerProperties.Label.
+       if (string.IsNullOrWhiteSpace(subject))
+       {
+           return true;
+       }
+
+       if (!MessageTypes.TryNormalize(
+               subject,
+               out var normalizedSubject))
+       {
+           error =
+               $"The Service Bus subject '{subject}' is unsupported.";
+
+           return false;
+       }
+
+       if (!string.Equals(
+               normalizedSubject,
+               expectedMessageType,
+               StringComparison.Ordinal))
+       {
+           error =
+               $"The Service Bus subject '{normalizedSubject}' does not " +
+               $"match the body messageType '{expectedMessageType}'.";
+
+           return false;
+       }
+
+       return true;
+   }
+
+   private static string? GetPropertyValue(
+       ServiceBusReceivedMessage message,
+       string propertyName)
+   {
+       ArgumentNullException.ThrowIfNull(message);
+       ArgumentException.ThrowIfNullOrWhiteSpace(propertyName);
+
+       foreach (var property in message.ApplicationProperties)
+       {
+           if (!string.Equals(
+                   property.Key,
+                   propertyName,
+                   StringComparison.OrdinalIgnoreCase))
+           {
+               continue;
+           }
+
+           var value = Convert.ToString(property.Value)?.Trim();
+
+           return string.IsNullOrWhiteSpace(value)
+               ? null
+               : value;
+       }
+
+       return null;
+   }
+
+   private static string ResolveCorrelationId(
+       string? bodyCorrelationId,
+       ServiceBusReceivedMessage receivedMessage)
+   {
+       if (!string.IsNullOrWhiteSpace(bodyCorrelationId))
+       {
+           return bodyCorrelationId.Trim();
+       }
+
+       if (!string.IsNullOrWhiteSpace(
+               receivedMessage.CorrelationId))
+       {
+           return receivedMessage.CorrelationId.Trim();
+       }
+
+       var applicationPropertyCorrelationId =
+           GetPropertyValue(
+               receivedMessage,
+               CorrelationIdProperty);
+
+       if (!string.IsNullOrWhiteSpace(
+               applicationPropertyCorrelationId))
+       {
+           return applicationPropertyCorrelationId;
+       }
+
+       return Guid.NewGuid().ToString("D");
+   }
+
+   private async Task DeadLetterAsync(
+       ServiceBusReceivedMessage message,
+       ServiceBusMessageActions actions,
+       string reason,
+       string description,
+       CancellationToken cancellationToken)
+   {
+       var normalizedDescription = Truncate(
+           description,
+           MaximumDeadLetterDescriptionLength);
+
+       _logger.LogWarning(
+           "Dead-lettering valve inspection message. " +
+           "MessageId={MessageId}, SequenceNumber={SequenceNumber}, " +
+           "DeliveryCount={DeliveryCount}, CorrelationId={CorrelationId}, " +
+           "PropertyMessageType={PropertyMessageType}, " +
+           "BodySubject={Subject}, Reason={Reason}, " +
+           "Description={Description}",
+           message.MessageId,
+           message.SequenceNumber,
+           message.DeliveryCount,
+           message.CorrelationId ?? "<missing>",
+           GetPropertyValue(message, MessageTypeProperty) ?? "<missing>",
+           message.Subject ?? "<missing>",
+           reason,
+           normalizedDescription);
+
+       await actions
+           .DeadLetterMessageAsync(
+               message,
+               deadLetterReason: reason,
+               deadLetterErrorDescription: normalizedDescription,
+               cancellationToken: cancellationToken)
+           .ConfigureAwait(false);
+   }
+
+   private static string Truncate(
+       string value,
+       int maximumLength)
+   {
+       ArgumentNullException.ThrowIfNull(value);
+
+       return value.Length <= maximumLength
+           ? value
+           : value[..maximumLength];
+   }
+}
+=======================
+namespace GaValveInspectionGisMaximo.Functions;
+public static class FunctionNames
+{
+   public const string Health = nameof(Health);
+   public const string CommonValveInspectionSubscriber = nameof(CommonValveInspectionSubscriber);
+   public const string GisToMaximoHttpStart = nameof(GisToMaximoHttpStart);
+   public const string MaximoToGisHttpStart = nameof(MaximoToGisHttpStart);
+   public const string GisToMaximoOrchestrator = nameof(GisToMaximoOrchestrator);
+   public const string MaximoToGisOrchestrator = nameof(MaximoToGisOrchestrator);
+   public const string TransformGisToMaximo = nameof(TransformGisToMaximo);
+   public const string TransformMaximoToGis = nameof(TransformMaximoToGis);
+   public const string SendToMaximo = nameof(SendToMaximo);
+   public const string SendToGis = nameof(SendToGis);
+}
+===================
+using System.Net;
+using System.Text.Json;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+namespace GaValveInspectionGisMaximo.Functions;
+public sealed class HealthFunction
+{
+   private const string CorrelationIdHeader =
+       "x-correlation-id";
+   private const int MaximumCorrelationIdLength = 128;
+   [Function(FunctionNames.Health)]
+   public async Task<HttpResponseData> RunAsync(
+       [HttpTrigger(
+           AuthorizationLevel.Anonymous,
+           "get",
+           Route = "health")]
+       HttpRequestData request,
+       CancellationToken cancellationToken)
+   {
+       ArgumentNullException.ThrowIfNull(request);
+       var correlationId =
+           GetOrCreateCorrelationId(request);
+       var response =
+           request.CreateResponse(HttpStatusCode.OK);
+       response.Headers.Add(
+           "Content-Type",
+           "application/json; charset=utf-8");
+       response.Headers.Add(
+           CorrelationIdHeader,
+           correlationId);
+       var responseBody = new
+       {
+           status = "Healthy",
+           service = "GaValveInspectionGisMaximo",
+           timestampUtc = DateTimeOffset.UtcNow
+       };
+       await response.WriteStringAsync(
+               JsonSerializer.Serialize(
+                   responseBody,
+                   JsonDefaults.Options),
+               cancellationToken)
+           .ConfigureAwait(false);
+       return response;
+   }
+   private static string GetOrCreateCorrelationId(
+       HttpRequestData request)
+   {
+       if (request.Headers.TryGetValues(
+               CorrelationIdHeader,
+               out var values))
+       {
+           var correlationId =
+               values.FirstOrDefault()?.Trim();
+           if (IsValidCorrelationId(correlationId))
+           {
+               return correlationId!;
+           }
+       }
+       return Guid.NewGuid().ToString("D");
+   }
+   private static bool IsValidCorrelationId(
+       string? correlationId)
+   {
+       return !string.IsNullOrWhiteSpace(correlationId) &&
+              correlationId.Length <=
+              MaximumCorrelationIdLength &&
+              correlationId.All(character =>
+                  char.IsLetterOrDigit(character) ||
+                  character is '-' or '_' or '.' or ':');
+   }
+}
+===========================
+using System.Text.Json;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using GaValveInspectionGisMaximo.Services;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+namespace GaValveInspectionGisMaximo.Functions;
+
+public sealed class ValveInspectionActivities
+{
+    private readonly IValveEventValidator _validator;
+    private readonly IGisToMaximoMapper _gisToMaximoMapper;
+    private readonly IMaximoToGisMapper _maximoToGisMapper;
+    private readonly IMaximoClient _maximoClient;
+    private readonly IArcGisClient _arcGisClient;
+    private readonly ILogger<ValveInspectionActivities> _logger;
+    public ValveInspectionActivities(
+        IValveEventValidator validator,
+        IGisToMaximoMapper gisToMaximoMapper,
+        IMaximoToGisMapper maximoToGisMapper,
+        IMaximoClient maximoClient,
+        IArcGisClient arcGisClient,
+        ILogger<ValveInspectionActivities> logger)
+    {
+        ArgumentNullException.ThrowIfNull(validator);
+        ArgumentNullException.ThrowIfNull(gisToMaximoMapper);
+        ArgumentNullException.ThrowIfNull(maximoToGisMapper);
+        ArgumentNullException.ThrowIfNull(maximoClient);
+        ArgumentNullException.ThrowIfNull(arcGisClient);
+        ArgumentNullException.ThrowIfNull(logger);
+        _validator = validator;
+        _gisToMaximoMapper = gisToMaximoMapper;
+        _maximoToGisMapper = maximoToGisMapper;
+        _maximoClient = maximoClient;
+        _arcGisClient = arcGisClient;
+        _logger = logger;
+    }
+    [Function(FunctionNames.TransformGisToMaximo)]
+    public MaximoSendCommand TransformGisToMaximo(
+        [ActivityTrigger] ValveInspectionMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(message.Payload);
+        var action = RequireAction(message.Payload.Action);
+        try
+        {
+            _logger.LogInformation(
+                "Starting GIS-to-Maximo payload transformation. " +
+                "MessageType={MessageType}, Action={Action}, " +
+                "CorrelationId={CorrelationId}, InputPayload={InputPayload}",
+                message.MessageType,
+                action,
+                message.CorrelationId,
+                SerializePayload(message.Payload));
+            _validator.ValidateAndThrow(
+                MessageTypes.GisToMaximo,
+                message.Payload);
+            var transformedPayload =
+                _gisToMaximoMapper.Map(message.Payload);
+            _logger.LogInformation(
+                "Completed GIS-to-Maximo payload transformation. " +
+                "Action={Action}, CorrelationId={CorrelationId}, " +
+                "OutputPayload={OutputPayload}",
+                action,
+                message.CorrelationId,
+                SerializePayload(transformedPayload));
+            return new MaximoSendCommand(
+                CorrelationId: message.CorrelationId,
+                Action: action,
+                Payload: transformedPayload);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "GIS-to-Maximo payload transformation failed. " +
+                "MessageType={MessageType}, Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                message.MessageType,
+                action,
+                message.CorrelationId);
+            throw;
+        }
+    }
+    [Function(FunctionNames.TransformMaximoToGis)]
+    public GisSendCommand TransformMaximoToGis(
+        [ActivityTrigger] ValveInspectionMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(message.Payload);
+        var action = RequireAction(message.Payload.Action);
+        try
+        {
+            _logger.LogInformation(
+                "Starting Maximo-to-GIS payload transformation. " +
+                "MessageType={MessageType}, Action={Action}, " +
+                "CorrelationId={CorrelationId}, InputPayload={InputPayload}",
+                message.MessageType,
+                action,
+                message.CorrelationId,
+                SerializePayload(message.Payload));
+            _validator.ValidateAndThrow(
+                MessageTypes.MaximoToGis,
+                message.Payload);
+            var transformedPayload =
+                _maximoToGisMapper.Map(message.Payload);
+            _logger.LogInformation(
+                "Completed Maximo-to-GIS payload transformation. " +
+                "Action={Action}, CorrelationId={CorrelationId}, " +
+                "OutputPayload={OutputPayload}",
+                action,
+                message.CorrelationId,
+                SerializePayload(transformedPayload));
+            return new GisSendCommand(
+                CorrelationId: message.CorrelationId,
+                Action: action,
+                Payload: transformedPayload);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Maximo-to-GIS payload transformation failed. " +
+                "MessageType={MessageType}, Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                message.MessageType,
+                action,
+                message.CorrelationId);
+            throw;
+        }
+    }
+    [Function(FunctionNames.SendToMaximo)]
+    public async Task<IntegrationResult> SendToMaximoAsync(
+        [ActivityTrigger] MaximoSendCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.Payload);
+        try
+        {
+            _logger.LogInformation(
+                "Sending payload to Maximo. Action={Action}, " +
+                "CorrelationId={CorrelationId}, Payload={Payload}",
+                command.Action,
+                command.CorrelationId,
+                SerializePayload(command.Payload));
+            var statusCode = await _maximoClient
+                .SendAsync(command, cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogInformation(
+                "Sent payload to Maximo. Action={Action}, " +
+                "CorrelationId={CorrelationId}, " +
+                "HttpStatusCode={HttpStatusCode}",
+                command.Action,
+                command.CorrelationId,
+                statusCode);
+            return new IntegrationResult(
+                Status: "Completed",
+                MessageType: MessageTypes.GisToMaximo,
+                CorrelationId: command.CorrelationId,
+                Action: command.Action,
+                Target: "Maximo",
+                HttpStatusCode: statusCode,
+                CompletedAtUtc: DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "Maximo operation was cancelled. Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                command.Action,
+                command.CorrelationId);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Sending payload to Maximo failed. Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                command.Action,
+                command.CorrelationId);
+            throw;
+        }
+    }
+    [Function(FunctionNames.SendToGis)]
+    public async Task<IntegrationResult> SendToGisAsync(
+        [ActivityTrigger] GisSendCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.Payload);
+        try
+        {
+            _logger.LogInformation(
+                "Sending payload to ArcGIS. Action={Action}, " +
+                "CorrelationId={CorrelationId}, Payload={Payload}",
+                command.Action,
+                command.CorrelationId,
+                SerializePayload(command.Payload));
+            var statusCode = await _arcGisClient
+                .SendAsync(command, cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogInformation(
+                "Sent payload to ArcGIS. Action={Action}, " +
+                "CorrelationId={CorrelationId}, " +
+                "HttpStatusCode={HttpStatusCode}",
+                command.Action,
+                command.CorrelationId,
+                statusCode);
+            return new IntegrationResult(
+                Status: "Completed",
+                MessageType: MessageTypes.MaximoToGis,
+                CorrelationId: command.CorrelationId,
+                Action: command.Action,
+                Target: "ArcGIS",
+                HttpStatusCode: statusCode,
+                CompletedAtUtc: DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "ArcGIS operation was cancelled. Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                command.Action,
+                command.CorrelationId);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Sending payload to ArcGIS failed. Action={Action}, " +
+                "CorrelationId={CorrelationId}",
+                command.Action,
+                command.CorrelationId);
+            throw;
+        }
+    }
+    private static string RequireAction(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            throw new InvalidOperationException(
+                "The valve inspection action is required.");
+        }
+        return action.Trim();
+    }
+    private static string SerializePayload<T>(T payload)
+    {
+        return JsonSerializer.Serialize(
+            payload,
+            JsonDefaults.Options);
+    }
+}
+=====================
+using System.Net;
+using System.Text.Json;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using GaValveInspectionGisMaximo.Services;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.DurableTask.Client;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Functions;
+
+public sealed class ValveInspectionHttpStart
+{
+    private const string MessageTypeHeader = "messageType";
+    private const string SourceHeader = "ng_source";
+    private const string TargetHeader = "ng_target";
+    private const string CorrelationHeader = "x-correlation-id";
+
+    private readonly IValveEventValidator _validator;
+    private readonly DownstreamOptions _options;
+    private readonly ILogger<ValveInspectionHttpStart> _logger;
+
+    public ValveInspectionHttpStart(
+        IValveEventValidator validator,
+        IOptions<DownstreamOptions> options,
+        ILogger<ValveInspectionHttpStart> logger)
+    {
+        ArgumentNullException.ThrowIfNull(validator);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _validator = validator;
+        _options = options.Value;
+        _logger = logger;
+    }
+
+    [Function(FunctionNames.GisToMaximoHttpStart)]
+    public Task<HttpResponseData> StartGisToMaximoAsync(
+        [HttpTrigger(
+            AuthorizationLevel.Function,
+            "post",
+            Route = "valve-inspections/gis-to-maximo")]
+        HttpRequestData request,
+        [DurableClient] DurableTaskClient durableClient,
+        CancellationToken cancellationToken)
+    {
+        return StartAsync(
+            request,
+            durableClient,
+            MessageTypes.GisToMaximo,
+            expectedSource: "GIS",
+            expectedTarget: "Maximo",
+            FunctionNames.GisToMaximoOrchestrator,
+            cancellationToken);
+    }
+
+    [Function(FunctionNames.MaximoToGisHttpStart)]
+    public Task<HttpResponseData> StartMaximoToGisAsync(
+        [HttpTrigger(
+            AuthorizationLevel.Function,
+            "post",
+            Route = "valve-inspections/maximo-to-gis")]
+        HttpRequestData request,
+        [DurableClient] DurableTaskClient durableClient,
+        CancellationToken cancellationToken)
+    {
+        return StartAsync(
+            request,
+            durableClient,
+            MessageTypes.MaximoToGis,
+            expectedSource: "Maximo",
+            expectedTarget: "GIS",
+            FunctionNames.MaximoToGisOrchestrator,
+            cancellationToken);
+    }
+
+    private async Task<HttpResponseData> StartAsync(
+        HttpRequestData request,
+        DurableTaskClient durableClient,
+        string expectedMessageType,
+        string expectedSource,
+        string expectedTarget,
+        string orchestratorName,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = GetCorrelationId(request);
+
+        if (!TryGetHeader(
+                request,
+                MessageTypeHeader,
+                out var messageType) ||
+            !TryGetHeader(
+                request,
+                SourceHeader,
+                out var source) ||
+            !TryGetHeader(
+                request,
+                TargetHeader,
+                out var target))
+        {
+            return await CreateErrorResponseAsync(
+                request,
+                HttpStatusCode.BadRequest,
+                "MISSING_ROUTING_HEADERS",
+                "messageType, ng_source and ng_target are required.",
+                correlationId,
+                cancellationToken);
+        }
+
+        if (!string.Equals(
+                messageType,
+                expectedMessageType,
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(
+                source,
+                expectedSource,
+                StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(
+                target,
+                expectedTarget,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return await CreateErrorResponseAsync(
+                request,
+                HttpStatusCode.BadRequest,
+                "INVALID_ROUTING_HEADERS",
+                "The routing headers do not match the requested direction.",
+                correlationId,
+                cancellationToken);
+        }
+
+        ValveInspectionEvent? payload;
+
+        try
+        {
+            payload =
+                await JsonSerializer.DeserializeAsync<ValveInspectionEvent>(
+                    request.Body,
+                    JsonDefaults.Options,
+                    cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return await CreateErrorResponseAsync(
+                request,
+                HttpStatusCode.BadRequest,
+                "INVALID_JSON",
+                "The request body is not valid JSON.",
+                correlationId,
+                cancellationToken);
+        }
+
+        if (payload is null)
+        {
+            return await CreateErrorResponseAsync(
+                request,
+                HttpStatusCode.BadRequest,
+                "EMPTY_PAYLOAD",
+                "A valve inspection payload is required.",
+                correlationId,
+                cancellationToken);
+        }
+
+        var validationErrors =
+            _validator.Validate(
+                expectedMessageType,
+                payload);
+
+        if (validationErrors.Count > 0)
+        {
+            return await CreateErrorResponseAsync(
+                request,
+                HttpStatusCode.BadRequest,
+                "VALIDATION_FAILED",
+                string.Join(' ', validationErrors),
+                correlationId,
+                cancellationToken);
+        }
+
+        var orchestrationMessage = new ValveInspectionMessage(
+            MessageType: expectedMessageType,
+            CorrelationId: correlationId,
+            ReceivedAtUtc: DateTimeOffset.UtcNow,
+            Payload: payload,
+            RetryPolicy: CreateRetryPolicy());
+
+        var instanceId =
+            await durableClient
+                .ScheduleNewOrchestrationInstanceAsync(
+                    orchestratorName,
+                    orchestrationMessage,
+                    cancellationToken);
+
+        _logger.LogInformation(
+            "Started HTTP valve orchestration. " +
+            "InstanceId={InstanceId}, MessageType={MessageType}, " +
+            "Source={Source}, Target={Target}, " +
+            "CorrelationId={CorrelationId}",
+            instanceId,
+            expectedMessageType,
+            expectedSource,
+            expectedTarget,
+            correlationId);
+
+        var response =
+            request.CreateResponse(HttpStatusCode.Accepted);
+
+        response.Headers.Add(
+            "Content-Type",
+            "application/json; charset=utf-8");
+
+        response.Headers.Add(
+            CorrelationHeader,
+            correlationId);
+
+        await response.WriteStringAsync(
+            JsonSerializer.Serialize(
+                new
+                {
+                    status = "Accepted",
+                    instanceId,
+                    messageType = expectedMessageType,
+                    source = expectedSource,
+                    target = expectedTarget,
+                    correlationId
+                },
+                JsonDefaults.Options),
+            cancellationToken);
+
+        return response;
+    }
+
+    private WorkflowRetryPolicy CreateRetryPolicy()
+    {
+        return new WorkflowRetryPolicy(
+            MaxAttempts: _options.MaxAttempts,
+            FirstDelaySeconds: _options.FirstDelaySeconds,
+            BackoffCoefficient: _options.BackoffCoefficient,
+            MaxDelaySeconds: _options.MaxDelaySeconds,
+            TimeoutSeconds: _options.RetryTimeoutSeconds);
+    }
+
+    private static bool TryGetHeader(
+        HttpRequestData request,
+        string headerName,
+        out string value)
+    {
+        value = string.Empty;
+
+        if (!request.Headers.TryGetValues(
+                headerName,
+                out var values))
+        {
+            return false;
+        }
+
+        var configuredValue =
+            values.FirstOrDefault()?.Trim();
+
+        if (string.IsNullOrWhiteSpace(configuredValue))
+        {
+            return false;
+        }
+
+        value = configuredValue;
+        return true;
+    }
+
+    private static string GetCorrelationId(
+        HttpRequestData request)
+    {
+        if (TryGetHeader(
+                request,
+                CorrelationHeader,
+                out var correlationId) &&
+            correlationId.Length <= 128 &&
+            correlationId.All(character =>
+                char.IsLetterOrDigit(character) ||
+                character is '-' or '_' or '.' or ':'))
+        {
+            return correlationId;
+        }
+
+        return Guid.NewGuid().ToString("D");
+    }
+
+    private static async Task<HttpResponseData> CreateErrorResponseAsync(
+        HttpRequestData request,
+        HttpStatusCode statusCode,
+        string code,
+        string message,
+        string correlationId,
+        CancellationToken cancellationToken)
+    {
+        var response = request.CreateResponse(statusCode);
+
+        response.Headers.Add(
+            "Content-Type",
+            "application/json; charset=utf-8");
+
+        response.Headers.Add(
+            CorrelationHeader,
+            correlationId);
+
+        await response.WriteStringAsync(
+            JsonSerializer.Serialize(
+                new
+                {
+                    code,
+                    message,
+                    correlationId
+                },
+                JsonDefaults.Options),
+            cancellationToken);
+
+        return response;
+    }
+}
+===================
+using GaValveInspectionGisMaximo.Contracts;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.DurableTask;
+
+namespace GaValveInspectionGisMaximo.Functions;
+
+public sealed class ValveInspectionOrchestrations
+{
+   [Function(FunctionNames.GisToMaximoOrchestrator)]
+   public async Task<IntegrationResult> RunGisToMaximoAsync(
+       [OrchestrationTrigger]
+       TaskOrchestrationContext context)
+   {
+       ArgumentNullException.ThrowIfNull(context);
+
+       var input = GetRequiredInput(
+           context,
+           MessageTypes.GisToMaximo,
+           "GIS-to-Maximo");
+
+       var command =
+           await context.CallActivityAsync<MaximoSendCommand>(
+               FunctionNames.TransformGisToMaximo,
+               input);
+
+       return await context.CallActivityAsync<IntegrationResult>(
+           FunctionNames.SendToMaximo,
+           command,
+           CreateTaskOptions(input.RetryPolicy!));
+   }
+
+   [Function(FunctionNames.MaximoToGisOrchestrator)]
+   public async Task<IntegrationResult> RunMaximoToGisAsync(
+       [OrchestrationTrigger]
+       TaskOrchestrationContext context)
+   {
+       ArgumentNullException.ThrowIfNull(context);
+
+       var input = GetRequiredInput(
+           context,
+           MessageTypes.MaximoToGis,
+           "Maximo-to-GIS");
+
+       var command =
+           await context.CallActivityAsync<GisSendCommand>(
+               FunctionNames.TransformMaximoToGis,
+               input);
+
+       return await context.CallActivityAsync<IntegrationResult>(
+           FunctionNames.SendToGis,
+           command,
+           CreateTaskOptions(input.RetryPolicy!));
+   }
+
+   private static ValveInspectionMessage GetRequiredInput(
+       TaskOrchestrationContext context,
+       string expectedMessageType,
+       string integrationDirection)
+   {
+       var input =
+           context.GetInput<ValveInspectionMessage>()
+           ?? throw new InvalidOperationException(
+               $"{integrationDirection} orchestration input is required.");
+
+       if (input.Payload is null)
+       {
+           throw new InvalidOperationException(
+               $"{integrationDirection} payload is required.");
+       }
+
+       if (string.IsNullOrWhiteSpace(input.CorrelationId))
+       {
+           throw new InvalidOperationException(
+               $"{integrationDirection} correlation ID is required.");
+       }
+
+       if (!string.Equals(
+               input.MessageType,
+               expectedMessageType,
+               StringComparison.OrdinalIgnoreCase))
+       {
+           throw new InvalidOperationException(
+               $"{integrationDirection} received an unsupported " +
+               $"message type '{input.MessageType}'.");
+       }
+
+       if (input.RetryPolicy is null)
+       {
+           throw new InvalidOperationException(
+               $"{integrationDirection} retry policy is required.");
+       }
+
+       return input;
+   }
+
+   private static TaskOptions CreateTaskOptions(
+       WorkflowRetryPolicy options)
+   {
+       ArgumentNullException.ThrowIfNull(options);
+
+       var retryPolicy = new RetryPolicy(
+           maxNumberOfAttempts:
+               options.MaxAttempts,
+           firstRetryInterval:
+               TimeSpan.FromSeconds(
+                   options.FirstDelaySeconds),
+           backoffCoefficient:
+               options.BackoffCoefficient,
+           maxRetryInterval:
+               TimeSpan.FromSeconds(
+                   options.MaxDelaySeconds),
+           retryTimeout:
+               TimeSpan.FromSeconds(
+                   options.TimeoutSeconds));
+
+       return TaskOptions.FromRetryPolicy(retryPolicy);
+   }
+}
+=================
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
+namespace GaValveInspectionGisMaximo.Serialization;
+
+public static class JsonDefaults
+
+{
+    public static JsonSerializerOptions Options { get; } =
+
+        CreateOptions();
+
+    public static void Apply(JsonSerializerOptions options)
+
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        options.PropertyNamingPolicy =
+
+            JsonNamingPolicy.CamelCase;
+
+        options.PropertyNameCaseInsensitive = true;
+        options.DefaultIgnoreCondition =
+            JsonIgnoreCondition.WhenWritingNull;
+
+        options.NumberHandling =
+
+            JsonNumberHandling.Strict;
+
+        options.TypeInfoResolver =
+
+            CreateTypeInfoResolver();
+    }
+
+    private static JsonSerializerOptions CreateOptions()
+
+    {
+        var options = new JsonSerializerOptions();
+        Apply(options);
+        return options;
+    }
+
+    private static IJsonTypeInfoResolver CreateTypeInfoResolver()
+
+    {
+        return new DefaultJsonTypeInfoResolver
+
+        {
+
+            Modifiers =
+
+              {
+                static typeInfo =>
+
+                {
+                  if (typeInfo.Kind != JsonTypeInfoKind.Object)
+
+                  {
+                    return;
+                  }
+
+                  foreach (var property in typeInfo.Properties)
+
+                  {
+                    if (property.PropertyType != typeof(string))
+
+                    {
+                      continue;
+                    }
+
+                    var existingCondition = property.ShouldSerialize;
+                    property.ShouldSerialize =
+
+                        (instance, value) =>
+
+                    {
+                      if (value is not string stringValue ||
+                          string.IsNullOrWhiteSpace(stringValue))
+                      {
+                        return false;
+                      }
+                      return existingCondition?.Invoke(
+                                 instance,
+                                 value) ??
+                             true;
+                    };
+                  }
+                }
+
+              }
+
+        };
+    }
+}
+
+================
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IArcGisClient
+{
+   Task<int> SendAsync(
+       GisSendCommand command,
+       CancellationToken cancellationToken);
+}
+
+public sealed class ArcGisClient : IArcGisClient
+{
+   public const string HttpClientName = "ArcGisService";
+
+   private const int MaximumResponseCharacters = 65_536;
+   private const int InvalidTokenErrorCode = 498;
+   private const int MaximumSendAttempts = 2;
+
+   private readonly IHttpClientFactory _httpClientFactory;
+   private readonly IArcGisTokenProvider _tokenProvider;
+   private readonly ILogger<ArcGisClient> _logger;
+   private readonly DownstreamOptions _options;
+   private readonly Uri _endpoint;
+   private readonly Uri? _referer;
+   private readonly TimeSpan _requestTimeout;
+
+   public ArcGisClient(
+       IHttpClientFactory httpClientFactory,
+       IArcGisTokenProvider tokenProvider,
+       IOptions<DownstreamOptions> options,
+       ILogger<ArcGisClient> logger)
+   {
+       ArgumentNullException.ThrowIfNull(httpClientFactory);
+       ArgumentNullException.ThrowIfNull(tokenProvider);
+       ArgumentNullException.ThrowIfNull(options);
+       ArgumentNullException.ThrowIfNull(options.Value);
+       ArgumentNullException.ThrowIfNull(logger);
+
+       _httpClientFactory = httpClientFactory;
+       _tokenProvider = tokenProvider;
+       _logger = logger;
+       _options = options.Value;
+
+       _endpoint = BuildEndpoint(
+           _options.GisHost,
+           _options.GisValveInspectionPath);
+
+       _referer = string.Equals(
+           _options.GisTokenClient,
+           "referer",
+           StringComparison.OrdinalIgnoreCase)
+               ? new Uri(
+                   _options.GisReferer,
+                   UriKind.Absolute)
+               : null;
+
+       _requestTimeout = TimeSpan.FromSeconds(
+           _options.GisTimeoutSeconds);
+   }
+
+   public async Task<int> SendAsync(
+       GisSendCommand command,
+       CancellationToken cancellationToken)
+   {
+       ArgumentNullException.ThrowIfNull(command);
+       ArgumentNullException.ThrowIfNull(command.Payload);
+
+       ArgumentException.ThrowIfNullOrWhiteSpace(
+           command.CorrelationId);
+
+       var payload = JsonSerializer.Serialize(
+           command.Payload,
+           JsonDefaults.Options);
+
+       try
+       {
+           for (var attempt = 1;
+                attempt <= MaximumSendAttempts;
+                attempt++)
+           {
+               _logger.LogInformation(
+                   "Obtaining ArcGIS access token. " +
+                   "CorrelationId={CorrelationId}, Attempt={Attempt}",
+                   command.CorrelationId,
+                   attempt);
+
+               var token = await _tokenProvider
+                   .GetTokenAsync(cancellationToken)
+                   .ConfigureAwait(false);
+
+               _logger.LogInformation(
+                   "ArcGIS access token is available. " +
+                   "CorrelationId={CorrelationId}, Attempt={Attempt}",
+                   command.CorrelationId,
+                   attempt);
+
+               var result = await SendRequestAsync(
+                       command,
+                       payload,
+                       token,
+                       attempt,
+                       cancellationToken)
+                   .ConfigureAwait(false);
+
+               if ((int)result.StatusCode ==
+                   InvalidTokenErrorCode)
+               {
+                   if (attempt < MaximumSendAttempts)
+                   {
+                       InvalidateRejectedToken(
+                           command,
+                           attempt,
+                           InvalidTokenErrorCode);
+
+                       continue;
+                   }
+
+                   throw DownstreamRequestException.ForHttpStatus(
+                       "ArcGIS",
+                       result.StatusCode);
+               }
+
+               if (!result.IsSuccessStatusCode)
+               {
+                   throw DownstreamRequestException.ForHttpStatus(
+                       "ArcGIS",
+                       result.StatusCode);
+               }
+
+               var arcGisError =
+                   ArcGisErrorParser.GetErrorOrThrow(
+                       result.ResponseBody,
+                       "ArcGIS");
+
+               if (arcGisError?.Code ==
+                   InvalidTokenErrorCode)
+               {
+                   if (attempt < MaximumSendAttempts)
+                   {
+                       InvalidateRejectedToken(
+                           command,
+                           attempt,
+                           arcGisError.Code);
+
+                       continue;
+                   }
+
+                   throw ArcGisErrorParser.CreateException(
+                       arcGisError,
+                       "ArcGIS");
+               }
+
+               if (arcGisError is not null)
+               {
+                   throw ArcGisErrorParser.CreateException(
+                       arcGisError,
+                       "ArcGIS");
+               }
+
+               _logger.LogInformation(
+                   "ArcGIS request completed successfully. " +
+                   "CorrelationId={CorrelationId}, Action={Action}, " +
+                   "HttpStatusCode={HttpStatusCode}, Attempt={Attempt}",
+                   command.CorrelationId,
+                   command.Action,
+                   (int)result.StatusCode,
+                   attempt);
+
+               return (int)result.StatusCode;
+           }
+
+           throw new InvalidOperationException(
+               "The ArcGIS request completed without a result.");
+       }
+       catch (OperationCanceledException exception)
+           when (!cancellationToken.IsCancellationRequested)
+       {
+           _logger.LogError(
+               exception,
+               "ArcGIS request timed out. " +
+               "CorrelationId={CorrelationId}, Action={Action}, " +
+               "Endpoint={Endpoint}",
+               command.CorrelationId,
+               command.Action,
+               _endpoint);
+
+           throw new DownstreamRequestException(
+               "The ArcGIS request timed out.",
+               HttpStatusCode.RequestTimeout,
+               isTransient: true,
+               exception);
+       }
+       catch (HttpRequestException exception)
+       {
+           _logger.LogError(
+               exception,
+               "ArcGIS request failed because of a network error. " +
+               "CorrelationId={CorrelationId}, Action={Action}, " +
+               "Endpoint={Endpoint}",
+               command.CorrelationId,
+               command.Action,
+               _endpoint);
+
+           throw new DownstreamRequestException(
+               "The ArcGIS request failed because of a network error.",
+               exception.StatusCode,
+               isTransient: true,
+               exception);
+       }
+       catch (DownstreamRequestException exception)
+       {
+           _logger.LogError(
+               exception,
+               "ArcGIS request failed. " +
+               "CorrelationId={CorrelationId}, Action={Action}, " +
+               "Endpoint={Endpoint}",
+               command.CorrelationId,
+               command.Action,
+               _endpoint);
+
+           throw;
+       }
+   }
+
+   private async Task<ArcGisHttpResult> SendRequestAsync(
+       GisSendCommand command,
+       string payload,
+       string token,
+       int attempt,
+       CancellationToken cancellationToken)
+   {
+       using var timeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               cancellationToken);
+
+       timeoutSource.CancelAfter(_requestTimeout);
+
+       using var request = new HttpRequestMessage(
+           HttpMethod.Post,
+           _endpoint);
+
+       request.Headers.TryAddWithoutValidation(
+           "x-correlation-id",
+           command.CorrelationId);
+
+       if (_referer is not null)
+       {
+           request.Headers.Referrer = _referer;
+       }
+
+       request.Content = new FormUrlEncodedContent(
+       [
+           new KeyValuePair<string, string>(
+               "f",
+               "json"),
+
+           new KeyValuePair<string, string>(
+               "token",
+               token),
+
+           new KeyValuePair<string, string>(
+               _options.GisPayloadParameterName,
+               payload)
+       ]);
+
+       _logger.LogInformation(
+           "Sending request to ArcGIS. " +
+           "CorrelationId={CorrelationId}, Action={Action}, " +
+           "Endpoint={Endpoint}, Attempt={Attempt}",
+           command.CorrelationId,
+           command.Action,
+           _endpoint,
+           attempt);
+
+       var client = _httpClientFactory.CreateClient(
+           HttpClientName);
+
+       using var response = await client
+           .SendAsync(
+               request,
+               HttpCompletionOption.ResponseHeadersRead,
+               timeoutSource.Token)
+           .ConfigureAwait(false);
+
+       var responseBody = await response.Content
+           .ReadLimitedStringAsync(
+               MaximumResponseCharacters,
+               timeoutSource.Token)
+           .ConfigureAwait(false);
+
+       _logger.LogInformation(
+           "Received response from ArcGIS. " +
+           "CorrelationId={CorrelationId}, Action={Action}, " +
+           "HttpStatusCode={HttpStatusCode}, Attempt={Attempt}, " +
+           "ResponseLength={ResponseLength}",
+           command.CorrelationId,
+           command.Action,
+           (int)response.StatusCode,
+           attempt,
+           responseBody.Length);
+
+       _logger.LogDebug(
+           "ArcGIS response body. " +
+           "CorrelationId={CorrelationId}, ResponseBody={ResponseBody}",
+           command.CorrelationId,
+           responseBody);
+
+       return new ArcGisHttpResult(
+           response.StatusCode,
+           response.IsSuccessStatusCode,
+           responseBody);
+   }
+
+   private void InvalidateRejectedToken(
+       GisSendCommand command,
+       int attempt,
+       int? errorCode)
+   {
+       _logger.LogWarning(
+           "ArcGIS rejected the access token. " +
+           "The cached token will be invalidated and the request " +
+           "will be retried once with a new token. " +
+           "CorrelationId={CorrelationId}, Action={Action}, " +
+           "ArcGisErrorCode={ArcGisErrorCode}, Attempt={Attempt}",
+           command.CorrelationId,
+           command.Action,
+           errorCode,
+           attempt);
+
+       _tokenProvider.InvalidateToken();
+   }
+
+   private static Uri BuildEndpoint(
+       string host,
+       string path)
+   {
+       ArgumentException.ThrowIfNullOrWhiteSpace(host);
+       ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+       var baseUri = new Uri(
+           $"{host.TrimEnd('/')}/",
+           UriKind.Absolute);
+
+       return new Uri(
+           baseUri,
+           path.TrimStart('/'));
+   }
+
+   private sealed record ArcGisHttpResult(
+       HttpStatusCode StatusCode,
+       bool IsSuccessStatusCode,
+       string ResponseBody);
+}
+
+internal sealed record ArcGisErrorInfo(
+   int? Code,
+   string Message,
+   string? Details);
+
+internal static class ArcGisErrorParser
+{
+   public static ArcGisErrorInfo? GetErrorOrThrow(
+       string responseBody,
+       string target)
+   {
+       if (string.IsNullOrWhiteSpace(responseBody))
+       {
+           return null;
+       }
+
+       JsonDocument document;
+
+       try
+       {
+           document = JsonDocument.Parse(responseBody);
+       }
+       catch (JsonException exception)
+       {
+           throw new DownstreamRequestException(
+               $"{target} returned an invalid JSON response.",
+               statusCode: null,
+               isTransient: false,
+               exception);
+       }
+
+       using (document)
+       {
+           var rootElement = document.RootElement;
+
+           if (rootElement.ValueKind != JsonValueKind.Object ||
+               !rootElement.TryGetProperty(
+                   "error",
+                   out var errorElement) ||
+               !IsActualError(errorElement))
+           {
+               return null;
+           }
+
+           return new ArcGisErrorInfo(
+               GetErrorCode(errorElement),
+               GetErrorMessage(errorElement),
+               GetErrorDetails(errorElement));
+       }
+   }
+
+   public static void ThrowIfArcGisError(
+       string responseBody,
+       string target)
+   {
+       var error = GetErrorOrThrow(
+           responseBody,
+           target);
+
+       if (error is not null)
+       {
+           throw CreateException(
+               error,
+               target);
+       }
+   }
+
+   public static DownstreamRequestException CreateException(
+       ArcGisErrorInfo error,
+       string target)
+   {
+       var description =
+           string.IsNullOrWhiteSpace(error.Details)
+               ? error.Message
+               : $"{error.Message} Details: {error.Details}";
+
+       return new DownstreamRequestException(
+           $"{target} returned application error " +
+           $"{FormatErrorCode(error.Code)}. {description}",
+           GetHttpStatusCode(error.Code),
+           IsTransientError(error.Code));
+   }
+
+   public static bool IsTransientError(
+       int? errorCode)
+   {
+       return errorCode is 408 or 429 or 498 ||
+              errorCode is >= 500 and <= 599;
+   }
+
+   private static bool IsActualError(
+       JsonElement errorElement)
+   {
+       if (errorElement.ValueKind is
+           JsonValueKind.Null or
+           JsonValueKind.Undefined)
+       {
+           return false;
+       }
+
+       if (errorElement.ValueKind == JsonValueKind.String)
+       {
+           return !string.IsNullOrWhiteSpace(
+               errorElement.GetString());
+       }
+
+       return errorElement.ValueKind == JsonValueKind.Object &&
+              errorElement.EnumerateObject().Any();
+   }
+
+   private static int? GetErrorCode(
+       JsonElement errorElement)
+   {
+       if (errorElement.ValueKind != JsonValueKind.Object ||
+           !errorElement.TryGetProperty(
+               "code",
+               out var codeElement))
+       {
+           return null;
+       }
+
+       if (codeElement.ValueKind == JsonValueKind.Number &&
+           codeElement.TryGetInt32(out var numericCode))
+       {
+           return numericCode;
+       }
+
+       if (codeElement.ValueKind == JsonValueKind.String &&
+           int.TryParse(
+               codeElement.GetString(),
+               NumberStyles.Integer,
+               CultureInfo.InvariantCulture,
+               out numericCode))
+       {
+           return numericCode;
+       }
+
+       return null;
+   }
+
+   private static string GetErrorMessage(
+       JsonElement errorElement)
+   {
+       if (errorElement.ValueKind == JsonValueKind.String)
+       {
+           return errorElement.GetString()?.Trim()
+               ?? "No error message was provided.";
+       }
+
+       if (errorElement.ValueKind == JsonValueKind.Object &&
+           errorElement.TryGetProperty(
+               "message",
+               out var messageElement) &&
+           messageElement.ValueKind == JsonValueKind.String)
+       {
+           var message = messageElement.GetString();
+
+           if (!string.IsNullOrWhiteSpace(message))
+           {
+               return message.Trim();
+           }
+       }
+
+       return "No error message was provided.";
+   }
+
+   private static string? GetErrorDetails(
+       JsonElement errorElement)
+   {
+       if (errorElement.ValueKind != JsonValueKind.Object ||
+           !errorElement.TryGetProperty(
+               "details",
+               out var detailsElement) ||
+           detailsElement.ValueKind != JsonValueKind.Array)
+       {
+           return null;
+       }
+
+       var details = detailsElement
+           .EnumerateArray()
+           .Where(element =>
+               element.ValueKind == JsonValueKind.String)
+           .Select(element =>
+               element.GetString()?.Trim())
+           .Where(value =>
+               !string.IsNullOrWhiteSpace(value))
+           .ToArray();
+
+       return details.Length == 0
+           ? null
+           : string.Join(" ", details);
+   }
+
+   private static string FormatErrorCode(
+       int? errorCode)
+   {
+       return errorCode?.ToString(
+                  CultureInfo.InvariantCulture)
+              ?? "unknown";
+   }
+
+   private static HttpStatusCode? GetHttpStatusCode(
+       int? errorCode)
+   {
+       return errorCode is >= 100 and <= 599
+           ? (HttpStatusCode)errorCode.Value
+           : null;
+   }
+}
+===========
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IArcGisTokenProvider
+{
+   Task<string> GetTokenAsync(
+       CancellationToken cancellationToken);
+
+   void InvalidateToken();
+}
+
+public sealed class ArcGisTokenProvider :
+   IArcGisTokenProvider
+{
+   public const string HttpClientName = "ArcGisToken";
+
+   private const int MaximumResponseCharacters = 65_536;
+
+   private readonly IHttpClientFactory _httpClientFactory;
+   private readonly ILogger<ArcGisTokenProvider> _logger;
+   private readonly DownstreamOptions _options;
+   private readonly Uri _tokenEndpoint;
+   private readonly TimeSpan _requestTimeout;
+   private readonly SemaphoreSlim _refreshLock = new(1, 1);
+
+   private CachedToken? _cachedToken;
+
+   public ArcGisTokenProvider(
+       IHttpClientFactory httpClientFactory,
+       IOptions<DownstreamOptions> options,
+       ILogger<ArcGisTokenProvider> logger)
+   {
+       ArgumentNullException.ThrowIfNull(httpClientFactory);
+       ArgumentNullException.ThrowIfNull(options);
+       ArgumentNullException.ThrowIfNull(options.Value);
+       ArgumentNullException.ThrowIfNull(logger);
+
+       _httpClientFactory = httpClientFactory;
+       _logger = logger;
+       _options = options.Value;
+
+       _tokenEndpoint = BuildEndpoint(
+           _options.GisHost,
+           _options.GisTokenPath);
+
+       _requestTimeout = TimeSpan.FromSeconds(
+           _options.GisTimeoutSeconds);
+   }
+
+   public async Task<string> GetTokenAsync(
+       CancellationToken cancellationToken)
+   {
+       var cachedToken = Volatile.Read(
+           ref _cachedToken);
+
+       if (IsUsable(cachedToken))
+       {
+           LogCachedToken(
+               cachedToken!,
+               "Using cached ArcGIS access token.");
+
+           return cachedToken!.Value;
+       }
+
+       await _refreshLock
+           .WaitAsync(cancellationToken)
+           .ConfigureAwait(false);
+
+       try
+       {
+           // Another invocation may have refreshed the token
+           // while this invocation was waiting for the lock.
+           cachedToken = Volatile.Read(
+               ref _cachedToken);
+
+           if (IsUsable(cachedToken))
+           {
+               LogCachedToken(
+                   cachedToken!,
+                   "Using ArcGIS access token refreshed " +
+                   "by another invocation.");
+
+               return cachedToken!.Value;
+           }
+
+           var refreshedToken = await RequestTokenWithRetryAsync(
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           Volatile.Write(
+               ref _cachedToken,
+               refreshedToken);
+
+           _logger.LogInformation(
+               "ArcGIS access token generated successfully and cached. " +
+               "ExpiresAtUtc={ExpiresAtUtc}, RefreshAtUtc={RefreshAtUtc}",
+               refreshedToken.ExpiresAtUtc,
+               GetRefreshAtUtc(refreshedToken.ExpiresAtUtc));
+
+           return refreshedToken.Value;
+       }
+       catch (OperationCanceledException)
+           when (cancellationToken.IsCancellationRequested)
+       {
+           throw;
+       }
+       catch (Exception exception)
+       {
+           _logger.LogError(
+               exception,
+               "Unable to obtain an ArcGIS access token. " +
+               "TokenEndpoint={TokenEndpoint}, TokenClient={TokenClient}",
+               _tokenEndpoint,
+               _options.GisTokenClient);
+
+           throw;
+       }
+       finally
+       {
+           _refreshLock.Release();
+       }
+   }
+
+   public void InvalidateToken()
+   {
+       var invalidatedToken = Interlocked.Exchange(
+           ref _cachedToken,
+           null);
+
+       if (invalidatedToken is null)
+       {
+           _logger.LogDebug(
+               "ArcGIS token invalidation was requested, " +
+               "but no token was cached.");
+
+           return;
+       }
+
+       _logger.LogWarning(
+           "Cached ArcGIS access token was invalidated. " +
+           "PreviousExpiresAtUtc={PreviousExpiresAtUtc}",
+           invalidatedToken.ExpiresAtUtc);
+   }
+
+   private async Task<CachedToken> RequestTokenWithRetryAsync(
+       CancellationToken cancellationToken)
+   {
+       using var retryTimeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               cancellationToken);
+
+       retryTimeoutSource.CancelAfter(
+           TimeSpan.FromSeconds(
+               _options.GisTokenRetryTimeoutSeconds));
+
+       try
+       {
+           for (var attempt = 1;
+                attempt <= _options.GisTokenMaxAttempts;
+                attempt++)
+           {
+               try
+               {
+                   _logger.LogInformation(
+                       "Requesting a new ArcGIS access token. " +
+                       "TokenEndpoint={TokenEndpoint}, " +
+                       "TokenClient={TokenClient}, Attempt={Attempt}, " +
+                       "MaximumAttempts={MaximumAttempts}",
+                       _tokenEndpoint,
+                       _options.GisTokenClient,
+                       attempt,
+                       _options.GisTokenMaxAttempts);
+
+                   var token = await RequestTokenOnceAsync(
+                           retryTimeoutSource.Token)
+                       .ConfigureAwait(false);
+
+                   _logger.LogInformation(
+                       "ArcGIS token request succeeded. " +
+                       "Attempt={Attempt}, MaximumAttempts={MaximumAttempts}, " +
+                       "ExpiresAtUtc={ExpiresAtUtc}",
+                       attempt,
+                       _options.GisTokenMaxAttempts,
+                       token.ExpiresAtUtc);
+
+                   return token;
+               }
+               catch (TokenRequestAttemptException exception)
+               {
+                   if (!exception.IsTransient ||
+                       attempt >= _options.GisTokenMaxAttempts)
+                   {
+                       _logger.LogError(
+                           exception.DownstreamException,
+                           "ArcGIS token request failed permanently. " +
+                           "Attempt={Attempt}, " +
+                           "MaximumAttempts={MaximumAttempts}, " +
+                           "IsTransient={IsTransient}",
+                           attempt,
+                           _options.GisTokenMaxAttempts,
+                           exception.IsTransient);
+
+                       throw exception.DownstreamException;
+                   }
+
+                   var delay = CalculateRetryDelay(
+                       attempt);
+
+                   _logger.LogWarning(
+                       exception.DownstreamException,
+                       "ArcGIS token request failed transiently. " +
+                       "The request will be retried. " +
+                       "Attempt={Attempt}, " +
+                       "MaximumAttempts={MaximumAttempts}, " +
+                       "RetryDelaySeconds={RetryDelaySeconds}",
+                       attempt,
+                       _options.GisTokenMaxAttempts,
+                       delay.TotalSeconds);
+
+                   await Task.Delay(
+                           delay,
+                           retryTimeoutSource.Token)
+                       .ConfigureAwait(false);
+               }
+           }
+
+           throw new InvalidOperationException(
+               "ArcGIS token retry processing completed without a result.");
+       }
+       catch (OperationCanceledException exception)
+           when (!cancellationToken.IsCancellationRequested)
+       {
+           _logger.LogError(
+               exception,
+               "ArcGIS token retry timeout was exceeded. " +
+               "RetryTimeoutSeconds={RetryTimeoutSeconds}",
+               _options.GisTokenRetryTimeoutSeconds);
+
+           throw new DownstreamRequestException(
+               "The ArcGIS token retry timeout was exceeded.",
+               HttpStatusCode.RequestTimeout,
+               isTransient: true,
+               exception);
+       }
+   }
+
+   private async Task<CachedToken> RequestTokenOnceAsync(
+       CancellationToken retryCancellationToken)
+   {
+       var formValues =
+           new List<KeyValuePair<string, string>>
+           {
+               new("f", "json"),
+               new("username", _options.GisUsername),
+               new("password", _options.GisPassword),
+               new("client", _options.GisTokenClient),
+               new(
+                   "expiration",
+                   _options.GisTokenExpirationMinutes.ToString(
+                       CultureInfo.InvariantCulture))
+           };
+
+       if (string.Equals(
+               _options.GisTokenClient,
+               "referer",
+               StringComparison.OrdinalIgnoreCase))
+       {
+           ArgumentException.ThrowIfNullOrWhiteSpace(
+               _options.GisReferer);
+
+           formValues.Add(
+               new KeyValuePair<string, string>(
+                   "referer",
+                   _options.GisReferer));
+       }
+
+       using var requestTimeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               retryCancellationToken);
+
+       requestTimeoutSource.CancelAfter(
+           _requestTimeout);
+
+       using var request = new HttpRequestMessage(
+           HttpMethod.Post,
+           _tokenEndpoint)
+       {
+           Content = new FormUrlEncodedContent(
+               formValues)
+       };
+
+       var client = _httpClientFactory.CreateClient(
+           HttpClientName);
+
+       try
+       {
+           using var response = await client
+               .SendAsync(
+                   request,
+                   HttpCompletionOption.ResponseHeadersRead,
+                   requestTimeoutSource.Token)
+               .ConfigureAwait(false);
+
+           var responseBody = await response.Content
+               .ReadLimitedStringAsync(
+                   MaximumResponseCharacters,
+                   requestTimeoutSource.Token)
+               .ConfigureAwait(false);
+
+           _logger.LogInformation(
+               "ArcGIS token endpoint responded. " +
+               "HttpStatusCode={HttpStatusCode}, " +
+               "ResponseLength={ResponseLength}",
+               (int)response.StatusCode,
+               responseBody.Length);
+
+           if (!response.IsSuccessStatusCode)
+           {
+               var downstreamException =
+                   DownstreamRequestException.ForHttpStatus(
+                       "ArcGIS token endpoint",
+                       response.StatusCode);
+
+               throw new TokenRequestAttemptException(
+                   downstreamException,
+                   IsTransientHttpStatus(response.StatusCode));
+           }
+
+           var arcGisError =
+               ArcGisErrorParser.GetErrorOrThrow(
+                   responseBody,
+                   "ArcGIS token endpoint");
+
+           if (arcGisError is not null)
+           {
+               var downstreamException =
+                   ArcGisErrorParser.CreateException(
+                       arcGisError,
+                       "ArcGIS token endpoint");
+
+               throw new TokenRequestAttemptException(
+                   downstreamException,
+                   ArcGisErrorParser.IsTransientError(
+                       arcGisError.Code));
+           }
+
+           var tokenResponse = DeserializeTokenResponse(
+               responseBody);
+
+           var expiresAtUtc = GetExpiration(
+               tokenResponse.Expires);
+
+           _logger.LogInformation(
+               "ArcGIS token response was validated successfully. " +
+               "ExpiresAtUtc={ExpiresAtUtc}, RefreshAtUtc={RefreshAtUtc}",
+               expiresAtUtc,
+               GetRefreshAtUtc(expiresAtUtc));
+
+           return new CachedToken(
+               tokenResponse.Token!,
+               expiresAtUtc);
+       }
+       catch (OperationCanceledException exception)
+           when (!retryCancellationToken.IsCancellationRequested)
+       {
+           var downstreamException =
+               new DownstreamRequestException(
+                   "The ArcGIS token request timed out.",
+                   HttpStatusCode.RequestTimeout,
+                   isTransient: true,
+                   exception);
+
+           throw new TokenRequestAttemptException(
+               downstreamException,
+               isTransient: true);
+       }
+       catch (HttpRequestException exception)
+       {
+           var downstreamException =
+               new DownstreamRequestException(
+                   "The ArcGIS token request failed because of " +
+                   "a network error.",
+                   exception.StatusCode,
+                   isTransient: true,
+                   exception);
+
+           throw new TokenRequestAttemptException(
+               downstreamException,
+               isTransient: true);
+       }
+   }
+
+   private bool IsUsable(
+       CachedToken? token)
+   {
+       if (token is null ||
+           string.IsNullOrWhiteSpace(token.Value))
+       {
+           return false;
+       }
+
+       return DateTimeOffset.UtcNow <
+              GetRefreshAtUtc(token.ExpiresAtUtc);
+   }
+
+   private DateTimeOffset GetRefreshAtUtc(
+       DateTimeOffset expiresAtUtc)
+   {
+       return expiresAtUtc.AddMinutes(
+           -_options.GisTokenRefreshSkewMinutes);
+   }
+
+   private TimeSpan CalculateRetryDelay(
+       int failedAttempt)
+   {
+       var exponentialDelaySeconds =
+           _options.GisTokenFirstDelaySeconds *
+           Math.Pow(
+               _options.GisTokenBackoffCoefficient,
+               failedAttempt - 1);
+
+       var boundedDelaySeconds = Math.Min(
+           exponentialDelaySeconds,
+           _options.GisTokenMaxDelaySeconds);
+
+       return TimeSpan.FromSeconds(
+           boundedDelaySeconds);
+   }
+
+   private void LogCachedToken(
+       CachedToken token,
+       string message)
+   {
+       _logger.LogDebug(
+           "{Message} ExpiresAtUtc={ExpiresAtUtc}, " +
+           "RefreshAtUtc={RefreshAtUtc}",
+           message,
+           token.ExpiresAtUtc,
+           GetRefreshAtUtc(token.ExpiresAtUtc));
+   }
+
+   private static ArcGisTokenResponse DeserializeTokenResponse(
+       string responseBody)
+   {
+       ArcGisTokenResponse? tokenResponse;
+
+       try
+       {
+           tokenResponse =
+               JsonSerializer.Deserialize<ArcGisTokenResponse>(
+                   responseBody,
+                   JsonDefaults.Options);
+       }
+       catch (JsonException exception)
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint returned invalid JSON.",
+               statusCode: null,
+               isTransient: false,
+               exception);
+       }
+
+       if (tokenResponse is null ||
+           string.IsNullOrWhiteSpace(tokenResponse.Token))
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint did not return a token.",
+               statusCode: null,
+               isTransient: false);
+       }
+
+       return tokenResponse;
+   }
+
+   private DateTimeOffset GetExpiration(
+       long expires)
+   {
+       if (expires <= 0)
+       {
+           return DateTimeOffset.UtcNow.AddMinutes(
+               _options.GisTokenExpirationMinutes);
+       }
+
+       try
+       {
+           var expiration =
+               DateTimeOffset.FromUnixTimeMilliseconds(
+                   expires);
+
+           if (expiration <= DateTimeOffset.UtcNow)
+           {
+               throw new DownstreamRequestException(
+                   "The ArcGIS token endpoint returned an expired token.",
+                   statusCode: null,
+                   isTransient: false);
+           }
+
+           return expiration;
+       }
+       catch (ArgumentOutOfRangeException exception)
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint returned an invalid " +
+               "expiration value.",
+               statusCode: null,
+               isTransient: false,
+               exception);
+       }
+   }
+
+   private static bool IsTransientHttpStatus(
+       HttpStatusCode statusCode)
+   {
+       var numericStatusCode = (int)statusCode;
+
+       return statusCode is
+                  HttpStatusCode.RequestTimeout or
+                  HttpStatusCode.TooManyRequests ||
+              numericStatusCode is >= 500 and <= 599;
+   }
+
+   private static Uri BuildEndpoint(
+       string host,
+       string path)
+   {
+       ArgumentException.ThrowIfNullOrWhiteSpace(host);
+       ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+       var baseUri = new Uri(
+           $"{host.TrimEnd('/')}/",
+           UriKind.Absolute);
+
+       return new Uri(
+           baseUri,
+           path.TrimStart('/'));
+   }
+
+   private sealed record CachedToken(
+       string Value,
+       DateTimeOffset ExpiresAtUtc);
+
+   private sealed class ArcGisTokenResponse
+   {
+       [JsonPropertyName("token")]
+       public string? Token { get; init; }
+
+       [JsonPropertyName("expires")]
+       public long Expires { get; init; }
+   }
+
+   private sealed class TokenRequestAttemptException :
+       Exception
+   {
+       public TokenRequestAttemptException(
+           DownstreamRequestException downstreamException,
+           bool isTransient)
+           : base(
+               downstreamException.Message,
+               downstreamException)
+       {
+           DownstreamException = downstreamException;
+           IsTransient = isTransient;
+       }
+
+       public DownstreamRequestException DownstreamException
+       {
+           get;
+       }
+
+       public bool IsTransient
+       {
+           get;
+       }
+   }
+}
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IArcGisTokenProvider
+{
+   Task<string> GetTokenAsync(
+       CancellationToken cancellationToken);
+
+   void InvalidateToken();
+}
+
+public sealed class ArcGisTokenProvider :
+   IArcGisTokenProvider
+{
+   public const string HttpClientName = "ArcGisToken";
+
+   private const int MaximumResponseCharacters = 65_536;
+
+   private readonly IHttpClientFactory _httpClientFactory;
+   private readonly ILogger<ArcGisTokenProvider> _logger;
+   private readonly DownstreamOptions _options;
+   private readonly Uri _tokenEndpoint;
+   private readonly TimeSpan _requestTimeout;
+   private readonly SemaphoreSlim _refreshLock = new(1, 1);
+
+   private CachedToken? _cachedToken;
+
+   public ArcGisTokenProvider(
+       IHttpClientFactory httpClientFactory,
+       IOptions<DownstreamOptions> options,
+       ILogger<ArcGisTokenProvider> logger)
+   {
+       ArgumentNullException.ThrowIfNull(httpClientFactory);
+       ArgumentNullException.ThrowIfNull(options);
+       ArgumentNullException.ThrowIfNull(options.Value);
+       ArgumentNullException.ThrowIfNull(logger);
+
+       _httpClientFactory = httpClientFactory;
+       _logger = logger;
+       _options = options.Value;
+
+       _tokenEndpoint = BuildEndpoint(
+           _options.GisHost,
+           _options.GisTokenPath);
+
+       _requestTimeout = TimeSpan.FromSeconds(
+           _options.GisTimeoutSeconds);
+   }
+
+   public async Task<string> GetTokenAsync(
+       CancellationToken cancellationToken)
+   {
+       var cachedToken = Volatile.Read(
+           ref _cachedToken);
+
+       if (IsUsable(cachedToken))
+       {
+           LogCachedToken(
+               cachedToken!,
+               "Using cached ArcGIS access token.");
+
+           return cachedToken!.Value;
+       }
+
+       await _refreshLock
+           .WaitAsync(cancellationToken)
+           .ConfigureAwait(false);
+
+       try
+       {
+           // Another invocation may have refreshed the token
+           // while this invocation was waiting for the lock.
+           cachedToken = Volatile.Read(
+               ref _cachedToken);
+
+           if (IsUsable(cachedToken))
+           {
+               LogCachedToken(
+                   cachedToken!,
+                   "Using ArcGIS access token refreshed " +
+                   "by another invocation.");
+
+               return cachedToken!.Value;
+           }
+
+           var refreshedToken = await RequestTokenWithRetryAsync(
+                   cancellationToken)
+               .ConfigureAwait(false);
+
+           Volatile.Write(
+               ref _cachedToken,
+               refreshedToken);
+
+           _logger.LogInformation(
+               "ArcGIS access token generated successfully and cached. " +
+               "ExpiresAtUtc={ExpiresAtUtc}, RefreshAtUtc={RefreshAtUtc}",
+               refreshedToken.ExpiresAtUtc,
+               GetRefreshAtUtc(refreshedToken.ExpiresAtUtc));
+
+           return refreshedToken.Value;
+       }
+       catch (OperationCanceledException)
+           when (cancellationToken.IsCancellationRequested)
+       {
+           throw;
+       }
+       catch (Exception exception)
+       {
+           _logger.LogError(
+               exception,
+               "Unable to obtain an ArcGIS access token. " +
+               "TokenEndpoint={TokenEndpoint}, TokenClient={TokenClient}",
+               _tokenEndpoint,
+               _options.GisTokenClient);
+
+           throw;
+       }
+       finally
+       {
+           _refreshLock.Release();
+       }
+   }
+
+   public void InvalidateToken()
+   {
+       var invalidatedToken = Interlocked.Exchange(
+           ref _cachedToken,
+           null);
+
+       if (invalidatedToken is null)
+       {
+           _logger.LogDebug(
+               "ArcGIS token invalidation was requested, " +
+               "but no token was cached.");
+
+           return;
+       }
+
+       _logger.LogWarning(
+           "Cached ArcGIS access token was invalidated. " +
+           "PreviousExpiresAtUtc={PreviousExpiresAtUtc}",
+           invalidatedToken.ExpiresAtUtc);
+   }
+
+   private async Task<CachedToken> RequestTokenWithRetryAsync(
+       CancellationToken cancellationToken)
+   {
+       using var retryTimeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               cancellationToken);
+
+       retryTimeoutSource.CancelAfter(
+           TimeSpan.FromSeconds(
+               _options.GisTokenRetryTimeoutSeconds));
+
+       try
+       {
+           for (var attempt = 1;
+                attempt <= _options.GisTokenMaxAttempts;
+                attempt++)
+           {
+               try
+               {
+                   _logger.LogInformation(
+                       "Requesting a new ArcGIS access token. " +
+                       "TokenEndpoint={TokenEndpoint}, " +
+                       "TokenClient={TokenClient}, Attempt={Attempt}, " +
+                       "MaximumAttempts={MaximumAttempts}",
+                       _tokenEndpoint,
+                       _options.GisTokenClient,
+                       attempt,
+                       _options.GisTokenMaxAttempts);
+
+                   var token = await RequestTokenOnceAsync(
+                           retryTimeoutSource.Token)
+                       .ConfigureAwait(false);
+
+                   _logger.LogInformation(
+                       "ArcGIS token request succeeded. " +
+                       "Attempt={Attempt}, MaximumAttempts={MaximumAttempts}, " +
+                       "ExpiresAtUtc={ExpiresAtUtc}",
+                       attempt,
+                       _options.GisTokenMaxAttempts,
+                       token.ExpiresAtUtc);
+
+                   return token;
+               }
+               catch (TokenRequestAttemptException exception)
+               {
+                   if (!exception.IsTransient ||
+                       attempt >= _options.GisTokenMaxAttempts)
+                   {
+                       _logger.LogError(
+                           exception.DownstreamException,
+                           "ArcGIS token request failed permanently. " +
+                           "Attempt={Attempt}, " +
+                           "MaximumAttempts={MaximumAttempts}, " +
+                           "IsTransient={IsTransient}",
+                           attempt,
+                           _options.GisTokenMaxAttempts,
+                           exception.IsTransient);
+
+                       throw exception.DownstreamException;
+                   }
+
+                   var delay = CalculateRetryDelay(
+                       attempt);
+
+                   _logger.LogWarning(
+                       exception.DownstreamException,
+                       "ArcGIS token request failed transiently. " +
+                       "The request will be retried. " +
+                       "Attempt={Attempt}, " +
+                       "MaximumAttempts={MaximumAttempts}, " +
+                       "RetryDelaySeconds={RetryDelaySeconds}",
+                       attempt,
+                       _options.GisTokenMaxAttempts,
+                       delay.TotalSeconds);
+
+                   await Task.Delay(
+                           delay,
+                           retryTimeoutSource.Token)
+                       .ConfigureAwait(false);
+               }
+           }
+
+           throw new InvalidOperationException(
+               "ArcGIS token retry processing completed without a result.");
+       }
+       catch (OperationCanceledException exception)
+           when (!cancellationToken.IsCancellationRequested)
+       {
+           _logger.LogError(
+               exception,
+               "ArcGIS token retry timeout was exceeded. " +
+               "RetryTimeoutSeconds={RetryTimeoutSeconds}",
+               _options.GisTokenRetryTimeoutSeconds);
+
+           throw new DownstreamRequestException(
+               "The ArcGIS token retry timeout was exceeded.",
+               HttpStatusCode.RequestTimeout,
+               isTransient: true,
+               exception);
+       }
+   }
+
+   private async Task<CachedToken> RequestTokenOnceAsync(
+       CancellationToken retryCancellationToken)
+   {
+       var formValues =
+           new List<KeyValuePair<string, string>>
+           {
+               new("f", "json"),
+               new("username", _options.GisUsername),
+               new("password", _options.GisPassword),
+               new("client", _options.GisTokenClient),
+               new(
+                   "expiration",
+                   _options.GisTokenExpirationMinutes.ToString(
+                       CultureInfo.InvariantCulture))
+           };
+
+       if (string.Equals(
+               _options.GisTokenClient,
+               "referer",
+               StringComparison.OrdinalIgnoreCase))
+       {
+           ArgumentException.ThrowIfNullOrWhiteSpace(
+               _options.GisReferer);
+
+           formValues.Add(
+               new KeyValuePair<string, string>(
+                   "referer",
+                   _options.GisReferer));
+       }
+
+       using var requestTimeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               retryCancellationToken);
+
+       requestTimeoutSource.CancelAfter(
+           _requestTimeout);
+
+       using var request = new HttpRequestMessage(
+           HttpMethod.Post,
+           _tokenEndpoint)
+       {
+           Content = new FormUrlEncodedContent(
+               formValues)
+       };
+
+       var client = _httpClientFactory.CreateClient(
+           HttpClientName);
+
+       try
+       {
+           using var response = await client
+               .SendAsync(
+                   request,
+                   HttpCompletionOption.ResponseHeadersRead,
+                   requestTimeoutSource.Token)
+               .ConfigureAwait(false);
+
+           var responseBody = await response.Content
+               .ReadLimitedStringAsync(
+                   MaximumResponseCharacters,
+                   requestTimeoutSource.Token)
+               .ConfigureAwait(false);
+
+           _logger.LogInformation(
+               "ArcGIS token endpoint responded. " +
+               "HttpStatusCode={HttpStatusCode}, " +
+               "ResponseLength={ResponseLength}",
+               (int)response.StatusCode,
+               responseBody.Length);
+
+           if (!response.IsSuccessStatusCode)
+           {
+               var downstreamException =
+                   DownstreamRequestException.ForHttpStatus(
+                       "ArcGIS token endpoint",
+                       response.StatusCode);
+
+               throw new TokenRequestAttemptException(
+                   downstreamException,
+                   IsTransientHttpStatus(response.StatusCode));
+           }
+
+           var arcGisError =
+               ArcGisErrorParser.GetErrorOrThrow(
+                   responseBody,
+                   "ArcGIS token endpoint");
+
+           if (arcGisError is not null)
+           {
+               var downstreamException =
+                   ArcGisErrorParser.CreateException(
+                       arcGisError,
+                       "ArcGIS token endpoint");
+
+               throw new TokenRequestAttemptException(
+                   downstreamException,
+                   ArcGisErrorParser.IsTransientError(
+                       arcGisError.Code));
+           }
+
+           var tokenResponse = DeserializeTokenResponse(
+               responseBody);
+
+           var expiresAtUtc = GetExpiration(
+               tokenResponse.Expires);
+
+           _logger.LogInformation(
+               "ArcGIS token response was validated successfully. " +
+               "ExpiresAtUtc={ExpiresAtUtc}, RefreshAtUtc={RefreshAtUtc}",
+               expiresAtUtc,
+               GetRefreshAtUtc(expiresAtUtc));
+
+           return new CachedToken(
+               tokenResponse.Token!,
+               expiresAtUtc);
+       }
+       catch (OperationCanceledException exception)
+           when (!retryCancellationToken.IsCancellationRequested)
+       {
+           var downstreamException =
+               new DownstreamRequestException(
+                   "The ArcGIS token request timed out.",
+                   HttpStatusCode.RequestTimeout,
+                   isTransient: true,
+                   exception);
+
+           throw new TokenRequestAttemptException(
+               downstreamException,
+               isTransient: true);
+       }
+       catch (HttpRequestException exception)
+       {
+           var downstreamException =
+               new DownstreamRequestException(
+                   "The ArcGIS token request failed because of " +
+                   "a network error.",
+                   exception.StatusCode,
+                   isTransient: true,
+                   exception);
+
+           throw new TokenRequestAttemptException(
+               downstreamException,
+               isTransient: true);
+       }
+   }
+
+   private bool IsUsable(
+       CachedToken? token)
+   {
+       if (token is null ||
+           string.IsNullOrWhiteSpace(token.Value))
+       {
+           return false;
+       }
+
+       return DateTimeOffset.UtcNow <
+              GetRefreshAtUtc(token.ExpiresAtUtc);
+   }
+
+   private DateTimeOffset GetRefreshAtUtc(
+       DateTimeOffset expiresAtUtc)
+   {
+       return expiresAtUtc.AddMinutes(
+           -_options.GisTokenRefreshSkewMinutes);
+   }
+
+   private TimeSpan CalculateRetryDelay(
+       int failedAttempt)
+   {
+       var exponentialDelaySeconds =
+           _options.GisTokenFirstDelaySeconds *
+           Math.Pow(
+               _options.GisTokenBackoffCoefficient,
+               failedAttempt - 1);
+
+       var boundedDelaySeconds = Math.Min(
+           exponentialDelaySeconds,
+           _options.GisTokenMaxDelaySeconds);
+
+       return TimeSpan.FromSeconds(
+           boundedDelaySeconds);
+   }
+
+   private void LogCachedToken(
+       CachedToken token,
+       string message)
+   {
+       _logger.LogDebug(
+           "{Message} ExpiresAtUtc={ExpiresAtUtc}, " +
+           "RefreshAtUtc={RefreshAtUtc}",
+           message,
+           token.ExpiresAtUtc,
+           GetRefreshAtUtc(token.ExpiresAtUtc));
+   }
+
+   private static ArcGisTokenResponse DeserializeTokenResponse(
+       string responseBody)
+   {
+       ArcGisTokenResponse? tokenResponse;
+
+       try
+       {
+           tokenResponse =
+               JsonSerializer.Deserialize<ArcGisTokenResponse>(
+                   responseBody,
+                   JsonDefaults.Options);
+       }
+       catch (JsonException exception)
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint returned invalid JSON.",
+               statusCode: null,
+               isTransient: false,
+               exception);
+       }
+
+       if (tokenResponse is null ||
+           string.IsNullOrWhiteSpace(tokenResponse.Token))
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint did not return a token.",
+               statusCode: null,
+               isTransient: false);
+       }
+
+       return tokenResponse;
+   }
+
+   private DateTimeOffset GetExpiration(
+       long expires)
+   {
+       if (expires <= 0)
+       {
+           return DateTimeOffset.UtcNow.AddMinutes(
+               _options.GisTokenExpirationMinutes);
+       }
+
+       try
+       {
+           var expiration =
+               DateTimeOffset.FromUnixTimeMilliseconds(
+                   expires);
+
+           if (expiration <= DateTimeOffset.UtcNow)
+           {
+               throw new DownstreamRequestException(
+                   "The ArcGIS token endpoint returned an expired token.",
+                   statusCode: null,
+                   isTransient: false);
+           }
+
+           return expiration;
+       }
+       catch (ArgumentOutOfRangeException exception)
+       {
+           throw new DownstreamRequestException(
+               "The ArcGIS token endpoint returned an invalid " +
+               "expiration value.",
+               statusCode: null,
+               isTransient: false,
+               exception);
+       }
+   }
+
+   private static bool IsTransientHttpStatus(
+       HttpStatusCode statusCode)
+   {
+       var numericStatusCode = (int)statusCode;
+
+       return statusCode is
+                  HttpStatusCode.RequestTimeout or
+                  HttpStatusCode.TooManyRequests ||
+              numericStatusCode is >= 500 and <= 599;
+   }
+
+   private static Uri BuildEndpoint(
+       string host,
+       string path)
+   {
+       ArgumentException.ThrowIfNullOrWhiteSpace(host);
+       ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+       var baseUri = new Uri(
+           $"{host.TrimEnd('/')}/",
+           UriKind.Absolute);
+
+       return new Uri(
+           baseUri,
+           path.TrimStart('/'));
+   }
+
+   private sealed record CachedToken(
+       string Value,
+       DateTimeOffset ExpiresAtUtc);
+
+   private sealed class ArcGisTokenResponse
+   {
+       [JsonPropertyName("token")]
+       public string? Token { get; init; }
+
+       [JsonPropertyName("expires")]
+       public long Expires { get; init; }
+   }
+
+   private sealed class TokenRequestAttemptException :
+       Exception
+   {
+       public TokenRequestAttemptException(
+           DownstreamRequestException downstreamException,
+           bool isTransient)
+           : base(
+               downstreamException.Message,
+               downstreamException)
+       {
+           DownstreamException = downstreamException;
+           IsTransient = isTransient;
+       }
+
+       public DownstreamRequestException DownstreamException
+       {
+           get;
+       }
+
+       public bool IsTransient
+       {
+           get;
+       }
+   }
+}
+
+
+=============
+using Microsoft.Extensions.Configuration;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+internal static class DownstreamEndpointBuilder
+{
+   public static Uri Build(
+       IConfiguration configuration,
+       string hostKey,
+       string pathKey)
+   {
+       ArgumentNullException.ThrowIfNull(configuration);
+       ArgumentException.ThrowIfNullOrWhiteSpace(hostKey);
+       ArgumentException.ThrowIfNullOrWhiteSpace(pathKey);
+
+       var configuredHost = configuration[hostKey]?.Trim();
+       var configuredPath = configuration[pathKey]?.Trim();
+
+       if (string.IsNullOrWhiteSpace(configuredHost) ||
+           !Uri.TryCreate(
+               configuredHost,
+               UriKind.Absolute,
+               out var host) ||
+           !string.Equals(
+               host.Scheme,
+               Uri.UriSchemeHttps,
+               StringComparison.OrdinalIgnoreCase) ||
+           string.IsNullOrWhiteSpace(host.Host) ||
+           !string.IsNullOrEmpty(host.UserInfo) ||
+           !string.Equals(
+               host.AbsolutePath,
+               "/",
+               StringComparison.Ordinal) ||
+           !string.IsNullOrEmpty(host.Query) ||
+           !string.IsNullOrEmpty(host.Fragment))
+       {
+           throw new InvalidOperationException(
+               $"{hostKey} must contain only an absolute HTTPS host.");
+       }
+
+       if (string.IsNullOrWhiteSpace(configuredPath) ||
+           !configuredPath.StartsWith(
+               "/",
+               StringComparison.Ordinal) ||
+           configuredPath.StartsWith(
+               "//",
+               StringComparison.Ordinal) ||
+           configuredPath.Length == 1 ||
+           configuredPath.Contains('?') ||
+           configuredPath.Contains('#') ||
+           configuredPath.Contains('\\') ||
+           configuredPath.Any(character =>
+               char.IsWhiteSpace(character) ||
+               char.IsControl(character)) ||
+           ContainsUnsafePathSegment(configuredPath))
+       {
+           throw new InvalidOperationException(
+               $"{pathKey} must contain a valid endpoint path " +
+               "beginning with '/'.");
+       }
+
+       if (!Uri.TryCreate(
+               host,
+               configuredPath,
+               out var endpoint) ||
+           !string.Equals(
+               endpoint.Scheme,
+               host.Scheme,
+               StringComparison.OrdinalIgnoreCase) ||
+           !string.Equals(
+               endpoint.Host,
+               host.Host,
+               StringComparison.OrdinalIgnoreCase) ||
+           endpoint.Port != host.Port)
+       {
+           throw new InvalidOperationException(
+               $"{hostKey} and {pathKey} do not form a valid " +
+               "HTTPS endpoint.");
+       }
+
+       return endpoint;
+   }
+
+   private static bool ContainsUnsafePathSegment(string path)
+   {
+       foreach (var segment in path.Split(
+                    '/',
+                    StringSplitOptions.RemoveEmptyEntries))
+       {
+           string decodedSegment;
+
+           try
+           {
+               decodedSegment =
+                   Uri.UnescapeDataString(segment);
+           }
+           catch (UriFormatException)
+           {
+               return true;
+           }
+
+           if (decodedSegment is "." or ".." ||
+               decodedSegment.Contains('/') ||
+               decodedSegment.Contains('\\') ||
+               decodedSegment.Any(char.IsControl))
+           {
+               return true;
+           }
+       }
+
+       return false;
+   }
+}
+
+
+===========
+using System.Net;
+namespace GaValveInspectionGisMaximo.Services;
+public sealed class DownstreamRequestException : Exception
+{
+   public DownstreamRequestException(
+       string message,
+       HttpStatusCode? statusCode,
+       bool isTransient,
+       Exception? innerException = null)
+       : base(message, innerException)
+   {
+       StatusCode = statusCode;
+       IsTransient = isTransient;
+   }
+   public HttpStatusCode? StatusCode { get; }
+   public bool IsTransient { get; }
+   public static DownstreamRequestException ForHttpStatus(
+       string target,
+       HttpStatusCode statusCode)
+   {
+       var isTransient =
+           statusCode is
+               HttpStatusCode.RequestTimeout or
+               HttpStatusCode.TooManyRequests ||
+           (int)statusCode >= 500;
+       return new DownstreamRequestException(
+           $"{target} returned HTTP {(int)statusCode}.",
+           statusCode,
+           isTransient);
+   }
+   public static DownstreamRequestException ForTimeout(
+       string target,
+       Exception innerException)
+   {
+       return new DownstreamRequestException(
+           $"{target} request timed out.",
+           statusCode: HttpStatusCode.RequestTimeout,
+           isTransient: true,
+           innerException);
+   }
+   public static DownstreamRequestException ForTransportFailure(
+       string target,
+       HttpRequestException innerException)
+   {
+       var statusCode = innerException.StatusCode;
+       var isTransient =
+           statusCode is null ||
+           statusCode is
+               HttpStatusCode.RequestTimeout or
+               HttpStatusCode.TooManyRequests ||
+           (int)statusCode.Value >= 500;
+       return new DownstreamRequestException(
+           $"{target} request failed before a successful " +
+           "HTTP response was received.",
+           statusCode,
+           isTransient,
+           innerException);
+   }
+}
+====================
+using System.Text;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+internal static class HttpContentExtensions
+
+{
+  private const int DefaultBufferSize = 8_192;
+
+  public static async Task<string> ReadLimitedStringAsync(
+
+      this HttpContent content,
+
+      int maxCharacters,
+
+      CancellationToken cancellationToken)
+
+  {
+    ArgumentNullException.ThrowIfNull(content);
+
+    if (maxCharacters <= 0)
+
+    {
+      throw new ArgumentOutOfRangeException(
+
+          nameof(maxCharacters),
+
+          maxCharacters,
+
+          "The response limit must be greater than zero.");
+    }
+
+    if (maxCharacters == int.MaxValue)
+
+    {
+      throw new ArgumentOutOfRangeException(
+
+          nameof(maxCharacters),
+
+          maxCharacters,
+
+          "The response limit is too large.");
+    }
+
+    await using var stream =
+
+        await content
+            .ReadAsStreamAsync(cancellationToken)
+
+            .ConfigureAwait(false);
+
+    using var reader = new StreamReader(
+
+        stream,
+
+        Encoding.UTF8,
+
+        detectEncodingFromByteOrderMarks: true,
+
+        bufferSize: DefaultBufferSize,
+
+        leaveOpen: false);
+
+    var maximumReadLength =
+
+        maxCharacters + 1;
+
+    var buffer = new char[
+
+        Math.Min(
+
+            maximumReadLength,
+
+            DefaultBufferSize)];
+
+    var result = new StringBuilder(
+
+        Math.Min(
+
+            maxCharacters,
+
+            DefaultBufferSize));
+
+    while (result.Length < maximumReadLength)
+
+    {
+      var remaining =
+
+          Math.Min(
+
+              buffer.Length,
+
+              maximumReadLength - result.Length);
+
+      var charactersRead =
+
+          await reader
+              .ReadAsync(
+
+                  buffer.AsMemory(0, remaining),
+
+                  cancellationToken)
+
+              .ConfigureAwait(false);
+
+      if (charactersRead == 0)
+
+      {
+        break;
+      }
+
+      result.Append(
+
+          buffer,
+
+          0,
+
+          charactersRead);
+    }
+
+    if (result.Length > maxCharacters)
+
+    {
+      throw new DownstreamRequestException(
+
+          "The downstream response exceeded the configured " +
+
+              "safety limit.",
+
+          statusCode: null,
+
+          isTransient: false);
+    }
+
+    return result.ToString();
+  }
+}
+
+
+=================
+using GaValveInspectionGisMaximo.Contracts;
+namespace GaValveInspectionGisMaximo.Services;
+public interface IMaximoClient
+{
+   Task<int> SendAsync(
+       MaximoSendCommand command,
+       CancellationToken cancellationToken);
+}
+
+==================
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public sealed class MaximoClient : IMaximoClient
+{
+   public const string HttpClientName = "Maximo";
+
+   private const int MaximumCorrelationIdLength = 128;
+
+   private readonly IHttpClientFactory _httpClientFactory;
+   private readonly Uri _endpoint;
+   private readonly string _basicCredential;
+   private readonly TimeSpan _requestTimeout;
+
+   public MaximoClient(
+       IHttpClientFactory httpClientFactory,
+       IOptions<DownstreamOptions> options)
+   {
+       ArgumentNullException.ThrowIfNull(httpClientFactory);
+       ArgumentNullException.ThrowIfNull(options);
+
+       var downstreamOptions = options.Value;
+
+       _httpClientFactory = httpClientFactory;
+
+       _endpoint = BuildEndpoint(
+           downstreamOptions.MaximoHost,
+           downstreamOptions.MaximoValveInspectionPath);
+
+       _basicCredential = NormalizeBasicCredential(
+           downstreamOptions.MaximoBasicAuth);
+
+       _requestTimeout = TimeSpan.FromSeconds(
+           downstreamOptions.MaximoTimeoutSeconds);
+   }
+
+   public async Task<int> SendAsync(
+       MaximoSendCommand command,
+       CancellationToken cancellationToken)
+   {
+       ArgumentNullException.ThrowIfNull(command);
+
+       ValidateCorrelationId(command.CorrelationId);
+
+       using var timeoutSource =
+           CancellationTokenSource.CreateLinkedTokenSource(
+               cancellationToken);
+
+       timeoutSource.CancelAfter(_requestTimeout);
+
+       using var request = new HttpRequestMessage(
+           HttpMethod.Post,
+           _endpoint);
+
+       request.Headers.Authorization =
+           new AuthenticationHeaderValue(
+               "Basic",
+               _basicCredential);
+
+       request.Headers.TryAddWithoutValidation(
+           "x-correlation-id",
+           command.CorrelationId);
+
+       request.Headers.TryAddWithoutValidation(
+           "Idempotency-Key",
+           command.CorrelationId);
+
+       request.Content = JsonContent.Create(
+           command.Payload,
+           options: JsonDefaults.Options);
+
+       var client = _httpClientFactory.CreateClient(
+           HttpClientName);
+
+       try
+       {
+           using var response = await client.SendAsync(
+                   request,
+                   HttpCompletionOption.ResponseHeadersRead,
+                   timeoutSource.Token)
+               .ConfigureAwait(false);
+
+           if (!response.IsSuccessStatusCode)
+           {
+               throw DownstreamRequestException.ForHttpStatus(
+                   "Maximo",
+                   response.StatusCode);
+           }
+
+           return (int)response.StatusCode;
+       }
+       catch (OperationCanceledException exception)
+           when (!cancellationToken.IsCancellationRequested)
+       {
+           throw new DownstreamRequestException(
+               "The Maximo request timed out.",
+               HttpStatusCode.RequestTimeout,
+               isTransient: true,
+               exception);
+       }
+       catch (HttpRequestException exception)
+       {
+           throw new DownstreamRequestException(
+               "The Maximo request failed due to a network error.",
+               exception.StatusCode,
+               isTransient: true,
+               exception);
+       }
+   }
+
+   private static Uri BuildEndpoint(
+       string host,
+       string path)
+   {
+       var baseUri = new Uri(
+           $"{host.TrimEnd('/')}/",
+           UriKind.Absolute);
+
+       return new Uri(
+           baseUri,
+           path.TrimStart('/'));
+   }
+
+   private static string NormalizeBasicCredential(
+       string configuredValue)
+   {
+       if (string.IsNullOrWhiteSpace(configuredValue))
+       {
+           throw new InvalidOperationException(
+               "MaximoBasicAuth is required.");
+       }
+
+       var credential = configuredValue.Trim();
+       const string basicPrefix = "Basic ";
+
+       if (credential.StartsWith(
+               basicPrefix,
+               StringComparison.OrdinalIgnoreCase))
+       {
+           credential = credential[basicPrefix.Length..].Trim();
+       }
+
+       if (string.IsNullOrWhiteSpace(credential))
+       {
+           throw new InvalidOperationException(
+               "MaximoBasicAuth must contain a Basic credential.");
+       }
+
+       return credential;
+   }
+
+   private static void ValidateCorrelationId(
+       string correlationId)
+   {
+       if (string.IsNullOrWhiteSpace(correlationId))
+       {
+           throw new ArgumentException(
+               "Correlation ID is required.",
+               nameof(correlationId));
+       }
+
+       if (correlationId.Length >
+               MaximumCorrelationIdLength ||
+           correlationId.Any(char.IsControl))
+       {
+           throw new ArgumentException(
+               "Correlation ID contains invalid characters or " +
+               $"exceeds {MaximumCorrelationIdLength} characters.",
+               nameof(correlationId));
+       }
+   }
+}
+
+===========
+using System.Globalization;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IGisToMaximoMapper
+{
+    MaximoAssetPayload Map(ValveInspectionEvent source);
+}
+
+public interface IMaximoToGisMapper
+{
+    GisValvePayload Map(ValveInspectionEvent source);
+}
+
+public sealed class GisToMaximoMapper : IGisToMaximoMapper
+{
+    private const string DefaultHierarchyPath = "System";
+
+    private static class AssetAttributeIds
+    {
+        public const string AccessType = "NG_ACCTYPE";
+        public const string AutomaticShutoff = "NG_AUTOSHTOFF";
+        public const string Critical = "NG_CRITICAL";
+        public const string CrossingType = "NG_CROSSTYPE";
+        public const string DateOfRetirement = "NG_DATEOFRETIREMENT";
+        public const string Egomp = "NG_EGOMP";
+        public const string Interconnect = "NG_INTERCONCT";
+        public const string LowPressure = "NG_LOWPRS";
+        public const string NormalPosition = "NG_NMPOSITN";
+        public const string RegulatoryType = "NG_REGULTYPE";
+        public const string RemoteOperated = "NG_REMOPERTD";
+        public const string RuptureMitigation = "NG_RUPTUREMIT";
+        public const string Sectionalizing = "NG_SECTNLIZING";
+        public const string SubSystemName = "NG_SUBSYSNM";
+        public const string SubSystemPressure = "NG_SUBSYSPRS";
+    }
+
+    private readonly IReadOnlyDictionary<string, string> _valveEventTypes;
+
+    public GisToMaximoMapper(
+        IOptions<DownstreamOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+
+        _valveEventTypes = EventTypeLookup.Create(
+            options.Value.ValveEventType);
+    }
+
+    public MaximoAssetPayload Map(
+        ValveInspectionEvent source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        var action = MapperValue.Required(
+            source.Action,
+            nameof(source.Action));
+
+        var isRegistration = string.Equals(
+            action,
+            ValveActions.ValveSpatialRegistration,
+            StringComparison.OrdinalIgnoreCase);
+
+        var isChanged = string.Equals(
+            action,
+            ValveActions.ValveFeatureChanged,
+            StringComparison.OrdinalIgnoreCase);
+
+        var isRetired = string.Equals(
+            action,
+            ValveActions.ValveFeatureRetired,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (!isRegistration &&
+            !isChanged &&
+            !isRetired)
+        {
+            throw new InvalidOperationException(
+                $"Unsupported GIS-to-Maximo action '{action}'.");
+        }
+
+        return new MaximoAssetPayload
+        {
+            NgGuid = MapperValue.Required(
+                source.GlobalId,
+                nameof(source.GlobalId)),
+
+            Status = EventTypeLookup.GetRequired(
+                _valveEventTypes,
+                action),
+
+            AssetNum = isRegistration
+                ? null
+                : MapperValue.Required(
+                    source.MaximoAssetNumber,
+                    nameof(source.MaximoAssetNumber)),
+
+            AssetTag = MapperValue.Required(
+                source.PhysicalValveId,
+                nameof(source.PhysicalValveId)),
+
+            ServiceTerritory = isRetired
+                ? null
+                : MapperValue.Required(
+                    source.ServiceTerritoryName,
+                    nameof(source.ServiceTerritoryName)),
+
+            HierarchyPath = isRetired
+                ? null
+                : MapperValue.Required(
+                    source.Classification,
+                    nameof(source.Classification)),
+
+            InstallDate = isRetired
+                ? null
+                : MapperValue.NormalizeOptionalDate(
+                    source.InstallationDate,
+                    nameof(source.InstallationDate)),
+
+            ServiceAddress = isRetired
+                ? null
+                : BuildServiceAddress(source),
+
+            AssetSpec = BuildAssetSpecifications(source)
+        };
+    }
+
+    private static MaximoAssetSpecification[]
+        BuildAssetSpecifications(
+            ValveInspectionEvent source)
+    {
+        var specifications =
+            new List<MaximoAssetSpecification>(15);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.AccessType,
+            source.AccessType);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.AutomaticShutoff,
+            source.IsAutomaticShutoffValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.Critical,
+            source.IsCriticalValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.CrossingType,
+            source.CrossingType);
+
+        AddDateSpecification(
+            specifications,
+            AssetAttributeIds.DateOfRetirement,
+            source.LifecycleEndDate);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.Egomp,
+            source.IsEgompValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.Interconnect,
+            source.IsInterconnectValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.LowPressure,
+            source.IsLowPressureValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.NormalPosition,
+            source.NormalPosition);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.RegulatoryType,
+            source.RegulatoryType);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.RemoteOperated,
+            source.IsRemoteOperatedValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.RuptureMitigation,
+            source.IsRuptureMitigationValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.Sectionalizing,
+            source.IsSectionalizingValve);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.SubSystemName,
+            source.SubSystemName);
+
+        AddAlnSpecification(
+            specifications,
+            AssetAttributeIds.SubSystemPressure,
+            source.SubSystemPressure);
+
+        return specifications.ToArray();
+    }
+
+    private static MaximoServiceAddress[]?
+        BuildServiceAddress(
+            ValveInspectionEvent source)
+    {
+        if (source.ServiceAddress is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var addresses =
+            new List<MaximoServiceAddress>(
+                source.ServiceAddress.Length);
+
+        foreach (var sourceAddress in source.ServiceAddress)
+        {
+            if (sourceAddress is null)
+            {
+                continue;
+            }
+
+            // Supports both "streetAddress" and "address".
+            var streetAddress =
+                MapperValue.Clean(sourceAddress.StreetAddress) ??
+                MapperValue.Clean(sourceAddress.Address);
+
+            var city =
+                MapperValue.Clean(sourceAddress.City);
+
+            var stateProvince =
+                MapperValue.Clean(sourceAddress.State);
+
+            var postalCode =
+                MapperValue.Clean(sourceAddress.ZipCode);
+
+            if (streetAddress is null &&
+                city is null &&
+                stateProvince is null &&
+                postalCode is null)
+            {
+                continue;
+            }
+
+            addresses.Add(
+                new MaximoServiceAddress
+                {
+                    StreetAddress = streetAddress,
+                    City = city,
+                    StateProvince = stateProvince,
+                    PostalCode = postalCode
+                });
+        }
+
+        return addresses.Count == 0
+            ? null
+            : addresses.ToArray();
+    }
+
+    private static MaximoServiceAddress[]?
+        BuildLegacyServiceAddress(
+            ValveInspectionEvent source)
+    {
+        var streetAddress =
+            MapperValue.Clean(source.Address);
+
+        var city =
+            MapperValue.Clean(source.City);
+
+        var stateProvince =
+            MapperValue.Clean(source.State);
+
+        var postalCode =
+            MapperValue.Clean(source.ZipCode);
+
+        if (streetAddress is null &&
+            city is null &&
+            stateProvince is null &&
+            postalCode is null)
+        {
+            return null;
+        }
+
+        return
+        [
+            new MaximoServiceAddress
+           {
+               StreetAddress = streetAddress,
+               City = city,
+               StateProvince = stateProvince,
+               PostalCode = postalCode
+           }
+        ];
+    }
+
+    private static void AddAlnSpecification(
+        ICollection<MaximoAssetSpecification> specifications,
+        string assetAttributeId,
+        string? value)
+    {
+        ArgumentNullException.ThrowIfNull(specifications);
+
+        var cleanedValue = MapperValue.Clean(value);
+
+        if (cleanedValue is null)
+        {
+            return;
+        }
+
+        specifications.Add(
+            new MaximoAssetSpecification
+            {
+                AssetAttributeId = assetAttributeId,
+                AlnValue = cleanedValue
+            });
+    }
+
+    private static void AddDateSpecification(
+        ICollection<MaximoAssetSpecification> specifications,
+        string assetAttributeId,
+        string? value)
+    {
+        ArgumentNullException.ThrowIfNull(specifications);
+
+        var normalizedDate = MapperValue.NormalizeOptionalDate(
+            value,
+            assetAttributeId);
+
+        if (normalizedDate is null)
+        {
+            return;
+        }
+
+        specifications.Add(
+            new MaximoAssetSpecification
+            {
+                AssetAttributeId = assetAttributeId,
+                DateValue = normalizedDate
+            });
+    }
+}
+public sealed class MaximoToGisMapper : IMaximoToGisMapper
+{
+    private readonly IReadOnlyDictionary<string, string> _valveEventTypes;
+
+    public MaximoToGisMapper(
+        IOptions<DownstreamOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+
+        _valveEventTypes =
+            new Dictionary<string, string>(
+                options.Value.ValveEventType ??
+                    new Dictionary<string, string>(),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    public GisValvePayload Map(
+        ValveInspectionEvent source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        var action = MapperValue.Clean(source.Action);
+
+        return new GisValvePayload
+        {
+            EventTimestamp = source.EventTimestamp,
+
+            Action = action,
+
+            Status = GetOptionalStatus(action),
+
+            GlobalId =
+                FirstNotEmpty(
+                    source.GlobalId,
+                    source.GlobalIdFromMaximo),
+
+            AssetId =
+                FirstNotEmpty(
+                    source.AssetId,
+                    source.MaximoAssetNumber,
+                    source.MaximoAssetNumberFromMaximo),
+
+            LifeCycleStatus =
+                MapperValue.Clean(source.LifeCycleStatus),
+
+            PhysicalValveId =
+                FirstNotEmpty(
+                    source.PhysicalValveId,
+                    source.AssetTagFromMaximo),
+
+            ServiceTerritoryName =
+                MapperValue.Clean(source.ServiceTerritoryName),
+
+            InstallationDate =
+                MapperValue.Clean(source.InstallationDate),
+
+            Classification =
+                MapperValue.Clean(source.Classification),
+
+            RegulatoryType =
+                MapperValue.Clean(source.RegulatoryType),
+
+            IsCriticalValve =
+                MapperValue.Clean(source.IsCriticalValve),
+
+            IsSectionalizingValve =
+                MapperValue.Clean(source.IsSectionalizingValve),
+
+            IsEgompValve =
+                MapperValue.Clean(source.IsEgompValve),
+
+            IsInterconnectValve =
+                MapperValue.Clean(source.IsInterconnectValve),
+
+            IsAutomaticShutoffValve =
+                MapperValue.Clean(
+                    source.IsAutomaticShutoffValve),
+
+            IsRemoteOperatedValve =
+                MapperValue.Clean(
+                    source.IsRemoteOperatedValve),
+
+            IsRuptureMitigationValve =
+                MapperValue.Clean(
+                    source.IsRuptureMitigationValve),
+
+            IsLowPressureValve =
+                MapperValue.Clean(source.IsLowPressureValve),
+
+            CrossingType =
+                MapperValue.Clean(source.CrossingType),
+
+            AccessType =
+                MapperValue.Clean(source.AccessType),
+
+            NormalPosition =
+                MapperValue.Clean(source.NormalPosition),
+
+            SubSystemName =
+                MapperValue.Clean(source.SubSystemName),
+
+            SubSystemPressure =
+                MapperValue.Clean(source.SubSystemPressure),
+
+            Address = MapperValue.Clean(source.Address),
+            City = MapperValue.Clean(source.City),
+            State = MapperValue.Clean(source.State),
+            ZipCode = MapperValue.Clean(source.ZipCode),
+
+            LifecycleEndDate =
+                MapperValue.Clean(source.LifecycleEndDate)
+        };
+    }
+
+    private string? GetOptionalStatus(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return null;
+        }
+
+        if (!_valveEventTypes.TryGetValue(
+                action,
+                out var status))
+        {
+            return null;
+        }
+
+        return MapperValue.Clean(status);
+    }
+
+    private static string? FirstNotEmpty(
+        params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            var cleanedValue = MapperValue.Clean(value);
+
+            if (cleanedValue is not null)
+            {
+                return cleanedValue;
+            }
+        }
+
+        return null;
+    }
+}
+internal static class EventTypeLookup
+{
+    public static IReadOnlyDictionary<string, string> Create(
+        IReadOnlyDictionary<string, string>? configuredValues)
+    {
+        if (configuredValues is null ||
+            configuredValues.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "ValveEventType configuration must contain at least " +
+                "one action-to-status mapping.");
+        }
+
+        var validatedValues =
+            new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in configuredValues)
+        {
+            var action = MapperValue.Clean(entry.Key);
+            var status = MapperValue.Clean(entry.Value);
+
+            if (action is null || status is null)
+            {
+                throw new InvalidOperationException(
+                    "ValveEventType configuration contains an empty " +
+                    "action or status.");
+            }
+
+            if (!validatedValues.TryAdd(action, status))
+            {
+                throw new InvalidOperationException(
+                    $"ValveEventType contains duplicate action '{action}'.");
+            }
+        }
+
+        return validatedValues;
+    }
+
+    public static string GetRequired(
+        IReadOnlyDictionary<string, string> eventTypes,
+        string action)
+    {
+        ArgumentNullException.ThrowIfNull(eventTypes);
+        ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        if (eventTypes.TryGetValue(
+                action,
+                out var eventType) &&
+            !string.IsNullOrWhiteSpace(eventType))
+        {
+            return eventType.Trim();
+        }
+
+        throw new InvalidOperationException(
+            $"No valve event type is configured for action '{action}'.");
+    }
+}
+
+internal static class MapperValue
+{
+    public static string Required(
+        string? value,
+        string propertyName)
+    {
+        return Clean(value)
+            ?? throw new InvalidOperationException(
+                $"{propertyName} is required.");
+    }
+
+    public static string? Clean(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
+    }
+
+    public static string? NormalizeOptionalDate(
+        string? value,
+        string propertyName)
+    {
+        var cleanedValue = Clean(value);
+
+        if (cleanedValue is null)
+        {
+            return null;
+        }
+
+        if (DateOnly.TryParseExact(
+                cleanedValue,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var date))
+        {
+            return date.ToString(
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture);
+        }
+
+        if (DateTimeOffset.TryParse(
+                cleanedValue,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var timestamp))
+        {
+            return timestamp.ToString(
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture);
+        }
+
+        throw new InvalidOperationException(
+            $"{propertyName} must contain a valid ISO-8601 date. " +
+            $"Received '{cleanedValue}'.");
+    }
+}
