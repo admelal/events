@@ -1,0 +1,156 @@
+Input payload from Maximo to GIS for ValveLifecycleInitiated
+{
+   "ACTION": "ValveLifecycleInitiated",
+   "ASSETNUM": "11697778",
+   "ASSETSPEC": [
+      {
+         "NG_DATEOFRETIREMENT": null
+      },
+      {
+         "NG_BNCHMK1": null
+      },
+      {
+         "NG_BNCHMK2": null
+      },
+      {
+         "NG_BNCHMK3": null
+      },
+      {
+         "NG_BNCHMK4": null
+      }
+   ],
+   "ASSETTAG": "Valve-004",
+   "DESCRIPTION": "Test Asset Valve",
+   "EVENTTIMESTAMP": "2026-09-18 12:12:33",
+   "NG_GUID": "11697778-001",
+   "SERVICEADDRESS": [
+      {
+         "CITY": "LYNN",
+         "POSTALCODE": "01902",
+         "STATEPROVINCE": "MA",
+         "STREETADDRESS": "0 ADAMS CT"
+      }
+   ],
+   "STATUS": "In Service"
+}
+
+Transformed payload format to GIS for ValveLifecycleInitiated
+
+{
+    "eventTimestamp": "2026-07-29T15:39:00Z",
+	"action": "ValveLifecycleInitiated",
+    "maximoAssetNumber":"123456",
+    "physicalValveId":"NYC-VLV-100234",
+    "lifeCycleStatus":"INSERVICE",
+    "assetDescription":"Test Asset",
+    "serviceAddress": [
+        {
+            "streetAddress":"123 Main St",
+            "city":"Boston",
+            "state":"MA",
+            "zipCode":"02134"
+        }
+    ],
+    "assetSpecification":[
+      {
+        "benchmark1":"Test",
+        "benchmark2":"Test",
+        "benchmark3":"Test",
+        "benchmark4":"Test"
+      }
+   ]
+}
+
+
+Input payload from Maximo to GIS for  ValveConditionObserved
+{
+   "ACTION": "ValveConditionObserved",
+   "ASSETNUM": "11697778",
+   "ASSETSPEC": [
+      {
+         "NG_DATEOFRETIREMENT": null
+      },
+      {
+         "NG_BNCHMK1": null
+      },
+      {
+         "NG_BNCHMK2": null
+      },
+      {
+         "NG_BNCHMK3": null
+      },
+      {
+         "NG_BNCHMK4": null
+      }
+   ],
+   "ASSETTAG": "Valve-004",
+   "EVENTTIMESTAMP": "2026-09-18 12:13:22",
+   "NG_GUID": "11697778-001",
+   "SERVICEADDRESS": [
+      {
+         "CITY": "LYNN",
+         "POSTALCODE": "01902",
+         "STATEPROVINCE": "MA",
+         "STREETADDRESS": "0 ADAMS CT"
+      }
+   ],
+   "STATUS": "Abandoned"
+}
+
+Tranformed payload from Maximo to GIS for ValveConditionObserved
+
+{	
+	"eventTimestamp": "2026-07-29T15:39:00Z",
+	"action": "ValveConditionObserved",
+	"globalId": "{8D7B8F91-7A4A-4EAB-BB0A-4A8E9E79E7CB}",
+	"maximoAssetNumber": "10124657",
+	"physicalValveId": "NYC-VLV-100234",
+    "lifeCycleStatus":"INSERVICE"
+}	
+
+Input payload from Maximo to GIS for ValveLifecycleEnded
+
+{
+   "ACTION": "ValveLifecycleEnded",
+   "ASSETNUM": "11697778",
+   "ASSETSPEC": [
+      {
+         "NG_DATEOFRETIREMENT": "2026-09-17 20:00:00"
+      },
+      {
+         "NG_BNCHMK1": null
+      },
+      {
+         "NG_BNCHMK2": null
+      },
+      {
+         "NG_BNCHMK3": null
+      },
+      {
+         "NG_BNCHMK4": null
+      }
+   ],
+   "ASSETTAG": "Valve-004",
+   "EVENTTIMESTAMP": "2026-09-18 12:13:22",
+   "NG_GUID": "11697778-001",
+   "SERVICEADDRESS": [
+      {
+         "CITY": "LYNN",
+         "POSTALCODE": "01902",
+         "STATEPROVINCE": "MA",
+         "STREETADDRESS": "0 ADAMS CT"
+      }
+   ],
+   "STATUS": "RETIRED"
+}
+
+Tranformed payload from Maximo to GIS for ValveLifecycleEnded
+{	
+	"eventTimestamp": "2026-07-29T15:39:00Z",
+	"action": "ValveLifecycleEnded",
+	"globalId": "{8D7B8F91-7A4A-4EAB-BB0A-4A8E9E79E7CB}",
+	"maximoAssetNumber": "10124657",
+	"physicalValveId": "NYC-VLV-100234",
+    "lifeCycleStatus":"RETIRED",
+	"lifecycleEndDate": "2026-07-29" //YYYY-MM-DD
+}	
