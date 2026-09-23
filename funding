@@ -1,0 +1,473 @@
+<policies>
+    <inbound>
+        <base />
+        <!-- Validate the caller's JWT -->
+        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" require-expiration-time="true" require-signed-tokens="true">
+            <openid-config url="{{ga-common-openid-config-url}}" />
+            <issuers>
+                <issuer>{{ga-common-openid-issuer}}</issuer>
+            </issuers>
+        </validate-jwt>
+        <!-- Capture or generate the correlation ID -->
+        <set-variable name="correlationId" value="@{
+            var correlationId =
+                context.Request.Headers.GetValueOrDefault(
+                    &quot;x-correlation-id&quot;,
+                    &quot;&quot;
+                );
+
+            return string.IsNullOrWhiteSpace(correlationId)
+                ? Guid.NewGuid().ToString()
+                : correlationId.Trim();
+        }" />
+        <!-- Forward the correlation ID to the Mule backend -->
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@(
+                (string)context.Variables[&quot;correlationId&quot;]
+            )</value>
+        </set-header>
+        <!-- Validate the FundingProjectRequest payload -->
+        <set-variable name="requestValidationError" value="@{
+            if (!context.Request.HasBody)
+            {
+                return &quot;The request body is required.&quot;;
+            }
+
+            var requestBody =
+                context.Request.Body.As&lt;string&gt;(
+                    preserveContent: true
+                );
+
+            if (string.IsNullOrWhiteSpace(requestBody))
+            {
+                return &quot;The request body is required.&quot;;
+            }
+
+            try
+            {
+                var requestJson =
+                    JObject.Parse(requestBody);
+
+                var fundingProjectRequestToken =
+                    requestJson[&quot;FundingProjectRequest&quot;];
+
+                if (fundingProjectRequestToken == null
+                    || fundingProjectRequestToken.Type == JTokenType.Null)
+                {
+                    return &quot;The FundingProjectRequest object is required.&quot;;
+                }
+
+                if (fundingProjectRequestToken.Type != JTokenType.Object)
+                {
+                    return &quot;The FundingProjectRequest property must be an object.&quot;;
+                }
+
+                var fundingProjectRequest =
+                    (JObject)fundingProjectRequestToken;
+
+                if (!fundingProjectRequest.Properties().Any())
+                {
+                    return &quot;The FundingProjectRequest object must contain at least one property.&quot;;
+                }
+
+                return string.Empty;
+            }
+            catch
+            {
+                return &quot;The request body must contain valid JSON.&quot;;
+            }
+        }" />
+        <choose>
+            <when condition="@(
+                !string.IsNullOrWhiteSpace(
+                    (string)context.Variables[&quot;requestValidationError&quot;]
+                )
+            )">
+                <return-response>
+                    <set-status code="400" reason="Bad Request" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-header name="x-correlation-id" exists-action="override">
+                        <value>@(
+                            (string)context.Variables[&quot;correlationId&quot;]
+                        )</value>
+                    </set-header>
+                    <set-body>@{
+                        return new JObject
+                        {
+                            [&quot;fundingProjectResponse&quot;] =
+                                new JObject
+                                {
+                                    [&quot;code&quot;] = 400,
+                                    [&quot;interface&quot;] =
+                                        &quot;Finance Master - Funding Project&quot;,
+                                    [&quot;responsedata&quot;] = null,
+                                    [&quot;severity&quot;] = &quot;Error&quot;,
+                                    [&quot;correlationId&quot;] =
+                                        (string)context.Variables[&quot;correlationId&quot;],
+                                    [&quot;message&quot;] =
+                                        (string)context.Variables[&quot;requestValidationError&quot;],
+                                    [&quot;status&quot;] = &quot;Failed&quot;
+                                }
+                        }.ToString();
+                    }</set-body>
+                </return-response>
+            </when>
+        </choose>
+        <set-header name="Content-Type" exists-action="override">
+            <value>application/json</value>
+        </set-header>
+        <set-backend-service backend-id="common-cloudhub-muga-url" />
+        <rewrite-uri template="/{{ga-maximo-financials-basepath}}/v1/fundingprojects" copy-unmatched-params="false" />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <set-variable name="backendResponseBody" value="@(
+            context.Response.Body.As&lt;string&gt;(
+                preserveContent: true
+            )
+        )" />
+        <set-variable name="backendBusinessError" value="@{
+            var responseBody =
+                (string)context.Variables[&quot;backendResponseBody&quot;];
+
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return false;
+            }
+
+            try
+            {
+                var responseJson =
+                    JObject.Parse(responseBody);
+
+                /*
+                 * Support raw Maximo business errors:
+                 *
+                 * {
+                 *     &quot;status&quot;: &quot;Dynamic Maximo error message&quot;
+                 * }
+                 */
+                var rootStatus =
+                    responseJson[&quot;status&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(rootStatus))
+                {
+                    return true;
+                }
+
+                /*
+                 * Support standardized Mule error responses.
+                 */
+                var responseDetail =
+                    responseJson[&quot;responseDetail&quot;];
+
+                if (responseDetail == null
+                    || responseDetail.Type != JTokenType.Object)
+                {
+                    return false;
+                }
+
+                var severity =
+                    responseDetail[&quot;severity&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                var status =
+                    responseDetail[&quot;status&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                var code =
+                    responseDetail[&quot;code&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                if (string.Equals(
+                    severity,
+                    &quot;Error&quot;,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (string.Equals(
+                    status,
+                    &quot;Failed&quot;,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(code)
+                    && (
+                        code.StartsWith(&quot;4&quot;)
+                        || code.StartsWith(&quot;5&quot;)
+                    ))
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }" />
+        <set-variable name="backendErrorMessage" value="@{
+            var responseBody =
+                (string)context.Variables[&quot;backendResponseBody&quot;];
+
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return &quot;The backend returned an empty response.&quot;;
+            }
+
+            try
+            {
+                var responseJson =
+                    JObject.Parse(responseBody);
+
+                var rootStatus =
+                    responseJson[&quot;status&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(rootStatus))
+                {
+                    return rootStatus;
+                }
+
+                var responseDetail =
+                    responseJson[&quot;responseDetail&quot;];
+
+                if (responseDetail != null
+                    && responseDetail.Type == JTokenType.Object)
+                {
+                    var message =
+                        responseDetail[&quot;message&quot;]
+                            ?.ToString()
+                            ?.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(message))
+                    {
+                        return message;
+                    }
+
+                    var details =
+                        responseDetail[&quot;details&quot;]
+                            ?.ToString()
+                            ?.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(details))
+                    {
+                        return details;
+                    }
+
+                    var responseData =
+                        responseDetail[&quot;responsedata&quot;]
+                            ?.ToString()
+                            ?.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(responseData))
+                    {
+                        return responseData;
+                    }
+
+                    var responseStatus =
+                        responseDetail[&quot;status&quot;]
+                            ?.ToString()
+                            ?.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(responseStatus))
+                    {
+                        return responseStatus;
+                    }
+                }
+
+                var messageValue =
+                    responseJson[&quot;message&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(messageValue))
+                {
+                    return messageValue;
+                }
+
+                var errorValue =
+                    responseJson[&quot;error&quot;]
+                        ?.ToString()
+                        ?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(errorValue))
+                {
+                    return errorValue;
+                }
+
+                return &quot;The backend request failed.&quot;;
+            }
+            catch
+            {
+                return &quot;The backend returned an invalid response.&quot;;
+            }
+        }" />
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@(
+                (string)context.Variables[&quot;correlationId&quot;]
+            )</value>
+        </set-header>
+        <choose>
+            <when condition="@(
+                (
+                    context.Response.StatusCode == 200
+                    || context.Response.StatusCode == 201
+                )
+                && (bool)context.Variables[&quot;backendBusinessError&quot;]
+            )">
+                <set-status code="400" reason="Bad Request" />
+                <set-header name="Content-Type" exists-action="override">
+                    <value>application/json</value>
+                </set-header>
+                <set-body>@{
+                    var responseBody =
+                        (string)context.Variables[&quot;backendResponseBody&quot;];
+
+                    JToken responseData;
+
+                    try
+                    {
+                        responseData =
+                            JToken.Parse(responseBody);
+                    }
+                    catch
+                    {
+                        responseData =
+                            new JValue(responseBody);
+                    }
+
+                    return new JObject
+                    {
+                        [&quot;fundingProjectResponse&quot;] =
+                            new JObject
+                            {
+                                [&quot;responseDetail&quot;] =
+                                    new JObject
+                                    {
+                                        [&quot;code&quot;] = 400,
+                                        [&quot;interface&quot;] =
+                                            &quot;Finance Master - Funding Project&quot;,
+                                        [&quot;responsedata&quot;] =
+                                            responseData,
+                                        [&quot;severity&quot;] = &quot;Error&quot;,
+                                        [&quot;correlationId&quot;] =
+                                            (string)context.Variables[&quot;correlationId&quot;],
+                                        [&quot;message&quot;] =
+                                            (string)context.Variables[&quot;backendErrorMessage&quot;],
+                                        [&quot;status&quot;] = &quot;Failed&quot;
+                                    }
+                            }
+                    }.ToString();
+                }</set-body>
+            </when>
+            <when condition="@(
+                context.Response.StatusCode == 200
+                || context.Response.StatusCode == 201
+            )">
+                <set-status code="200" reason="OK" />
+                <set-header name="Content-Type" exists-action="override">
+                    <value>application/json</value>
+                </set-header>
+                <set-body>@{
+                    var responseBody =
+                        (string)context.Variables[&quot;backendResponseBody&quot;];
+
+                    JToken responseData;
+
+                    try
+                    {
+                        responseData =
+                            JToken.Parse(responseBody);
+                    }
+                    catch
+                    {
+                        responseData =
+                            new JValue(responseBody);
+                    }
+
+                    return new JObject
+                    {
+                        [&quot;fundingProjectResponse&quot;] =
+                            new JObject
+                            {
+                                [&quot;code&quot;] = 200,
+                                [&quot;interface&quot;] =
+                                    &quot;Finance Master - Funding Project&quot;,
+                                [&quot;responsedata&quot;] =
+                                    responseData,
+                                [&quot;severity&quot;] =
+                                    &quot;Information&quot;,
+                                [&quot;correlationId&quot;] =
+                                    (string)context.Variables[&quot;correlationId&quot;],
+                                [&quot;status&quot;] = &quot;Success&quot;
+                            }
+                    }.ToString();
+                }</set-body>
+            </when>
+            <otherwise>
+                <set-header name="Content-Type" exists-action="override">
+                    <value>application/json</value>
+                </set-header>
+                <set-body>@(
+                    (string)context.Variables[&quot;backendResponseBody&quot;]
+                )</set-body>
+            </otherwise>
+        </choose>
+    </outbound>
+    <on-error>
+        <base />
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@(
+                context.Variables.ContainsKey(&quot;correlationId&quot;)
+                    ? (string)context.Variables[&quot;correlationId&quot;]
+                    : Guid.NewGuid().ToString()
+            )</value>
+        </set-header>
+    </on-error>
+</policies>
+
+
+Client send the header as ng_source: SAP, ng_target: C55 and ng_source: PowerPlan, ng_target: Maximo.
+Routing backend based on the Source-System and Target-System.
+
+Just check only FundingProjectRequest not null/ Non empty. No transformation is required.
+
+
+
+Source-System:SAP/PowerPlan
+Target-System:C55/Maximo
+=========================
+{
+  "FundingProjectRequest": {
+    "orgId": "",
+    "ngFpNum": "",
+    "ngFpDesc": "",
+    "ngCompanyCode": "",
+    "ngFpType": "",
+    "ngStatus": true,
+    "ngProgramcode": "",
+    "ngCostCenter": "",
+    "ngCbc": "",
+    "ngZzInvCode": "5330101981",
+    "ngPspid": "C095994",
+    "ngPost1": "LYLNG25_Instrument_Make_Up_Air",
+    "ng_business_segment_id": ""
+  }
+}
