@@ -2,282 +2,145 @@
     <inbound>
         <base />
         <set-variable name="correlationId" value="@{
-           var value = context.Request.Headers.GetValueOrDefault(
-               "x-correlation-id",
-               string.Empty);
-
-           return string.IsNullOrWhiteSpace(value)
-               ? Guid.NewGuid().ToString("D")
-               : value.Trim();
+           var value = context.Request.Headers.GetValueOrDefault("x-correlation-id", "");
+           return string.IsNullOrWhiteSpace(value) ? Guid.NewGuid().ToString() : value.Trim();
        }" />
-        <set-variable name="messageId" value="@(Guid.NewGuid().ToString("D"))" />
-        <set-variable name="sourceSystem" value="@(
-               context.Request.Headers
-                   .GetValueOrDefault("ng_source", string.Empty)
-                   .Trim()
-           )" />
-        <set-variable name="targetSystem" value="@(
-               context.Request.Headers
-                   .GetValueOrDefault("ng_target", string.Empty)
-                   .Trim()
-           )" />
-        <set-variable name="messageType" value="@{
-                var source =
-                    (string)context.Variables["sourceSystem"];
-                var target =
-                    (string)context.Variables["targetSystem"];
-                if (source.Equals(
-                        "GIS",
-                        StringComparison.OrdinalIgnoreCase) &&
-                    target.Equals(
-                        "Maximo",
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    return "GisToMaximo";
-                }
-                if (source.Equals(
-                        "Maximo",
-                        StringComparison.OrdinalIgnoreCase) &&
-                    target.Equals(
-                        "GIS",
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    return "MaximoToGis";
-                }
-                return string.Empty;
-                }" />
-        <!-- Log the normalized routing values to Application Insights. -->
-        <trace source="ValveInspectionRouting" severity="information">
-            <message>Valve inspection routing headers received</message>
-            <metadata name="ng_source" value="@((string)context.Variables["sourceSystem"])" />
-            <metadata name="ng_target" value="@((string)context.Variables["targetSystem"])" />
-            <metadata name="correlationId" value="@((string)context.Variables["correlationId"])" />
-        </trace>
+        <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" require-expiration-time="true" require-signed-tokens="true">
+            <openid-config url="{{ga-common-openid-config-url}}" />
+            <issuers>
+                <issuer>{{ga-common-openid-issuer}}</issuer>
+            </issuers>
+        </validate-jwt>
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@((string)context.Variables["correlationId"])</value>
+        </set-header>
+        <set-variable name="Source-System" value="@(
+           context.Request.Headers.GetValueOrDefault("ng_source", "").Trim().ToUpperInvariant()
+       )" />
+        <set-variable name="Target-System" value="@(
+           context.Request.Headers.GetValueOrDefault("ng_target", "").Trim().ToUpperInvariant()
+       )" />
+        <set-variable name="requestValidationError" value="@{
+           if (!context.Request.HasBody)
+           {
+               return "The request body is required.";
+           }
+
+           var body = context.Request.Body.As&lt;string&gt;(preserveContent: true);
+           if (string.IsNullOrWhiteSpace(body))
+           {
+               return "The request body is required.";
+           }
+
+           try
+           {
+               var requestJson = JObject.Parse(body);
+               var fundingProjectRequest = requestJson["FundingProjectRequest"] as JObject;
+
+               if (fundingProjectRequest == null || !fundingProjectRequest.HasValues)
+               {
+                   return "FundingProjectRequest must be a non-null, nonempty object.";
+               }
+
+               return string.Empty;
+           }
+           catch
+           {
+               return "The request body must contain a valid JSON object.";
+           }
+       }" />
         <choose>
-            <when condition="@(
-               string.IsNullOrWhiteSpace(
-                   (string)context.Variables["messageType"])
-           )">
+            <when condition="@(!string.IsNullOrWhiteSpace((string)context.Variables["requestValidationError"]))">
                 <return-response>
                     <set-status code="400" reason="Bad Request" />
                     <set-header name="Content-Type" exists-action="override">
                         <value>application/json</value>
                     </set-header>
                     <set-header name="x-correlation-id" exists-action="override">
-                        <value>@(
-                           (string)context.Variables[
-                               "correlationId"]
-                       )</value>
+                        <value>@((string)context.Variables["correlationId"])</value>
                     </set-header>
                     <set-body>@{
-                       return new Newtonsoft.Json.Linq.JObject(
-                           new Newtonsoft.Json.Linq.JProperty(
-                               "statusCode",
-                               400),
-                           new Newtonsoft.Json.Linq.JProperty(
-                               "code",
-                               "INVALID_ROUTE"),
-                           new Newtonsoft.Json.Linq.JProperty(
-                               "message",
-                               "Provide ng_source and ng_target as GIS/Maximo or Maximo/GIS."),
-                           new Newtonsoft.Json.Linq.JProperty(
-                               "correlationId",
-                               (string)context.Variables[
-                                   "correlationId"])
-                       ).ToString(
-                           Newtonsoft.Json.Formatting.None);
+                       return new JObject
+                       {
+                           ["fundingProjectResponse"] = new JObject
+                           {
+                               ["code"] = 400,
+                               ["interface"] = "Finance Master - Funding Project",
+                               ["responsedata"] = null,
+                               ["severity"] = "Error",
+                               ["correlationId"] = (string)context.Variables["correlationId"],
+                               ["message"] = (string)context.Variables["requestValidationError"],
+                               ["status"] = "Failed"
+                           }
+                       }.ToString();
                    }</set-body>
                 </return-response>
             </when>
         </choose>
-        <set-variable id="parse-request-payload" name="requestPayload" value="@(
-               context.Request.Body.As&lt;
-                   Newtonsoft.Json.Linq.JObject
-               &gt;(preserveContent: true)
-           )" />
-        <set-variable name="serviceBusMessage" value="@{
-           return new Newtonsoft.Json.Linq.JObject(
-               new Newtonsoft.Json.Linq.JProperty(
-                   "messageType",
-                   (string)context.Variables["messageType"]),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "correlationId",
-                   (string)context.Variables["correlationId"]),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "receivedAtUtc",
-                   DateTime.UtcNow.ToString("O")),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "payload",
-                   (Newtonsoft.Json.Linq.JObject)
-                       context.Variables["requestPayload"])
-           ).ToString(Newtonsoft.Json.Formatting.None);
-       }" />
-        <set-header name="BrokerProperties" exists-action="override">
-            <value>@{
-               return new Newtonsoft.Json.Linq.JObject(
-                   new Newtonsoft.Json.Linq.JProperty(
-                       "MessageId",
-                       (string)context.Variables["messageId"]),
-                   new Newtonsoft.Json.Linq.JProperty(
-                       "CorrelationId",
-                       (string)context.Variables["correlationId"]),
-                   new Newtonsoft.Json.Linq.JProperty(
-                       "Label",
-                       (string)context.Variables["messageType"]),
-                   new Newtonsoft.Json.Linq.JProperty(
-                       "ContentType",
-                       "application/json")
-               ).ToString(
-                   Newtonsoft.Json.Formatting.None);
-           }</value>
-        </set-header>
-        <set-header name="messageType" exists-action="override">
-            <value>@(
-               (string)context.Variables["messageType"]
-           )</value>
-        </set-header>
-        <set-header name="ng_source" exists-action="override">
-            <value>@(
-               (string)context.Variables["sourceSystem"]
-           )</value>
-        </set-header>
-        <set-header name="ng_target" exists-action="override">
-            <value>@(
-               (string)context.Variables["targetSystem"]
-           )</value>
-        </set-header>
-        <set-header name="x-correlation-id" exists-action="override">
-            <value>@(
-               (string)context.Variables["correlationId"]
-           )</value>
-        </set-header>
-        <set-header name="Content-Type" exists-action="override">
-            <value>application/json</value>
-        </set-header>
-        <set-header name="Authorization" exists-action="delete" />
-        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
-        <set-backend-service backend-id="ga-common-servicebus-namespace" />
-        <rewrite-uri template="/{{ga-valvesgismx-topic-name}}/messages" copy-unmatched-params="false" />
-        <authentication-managed-identity resource="https://servicebus.azure.net/" ignore-error="false" />
-        <set-body>@(
-           (string)context.Variables["serviceBusMessage"]
-       )</set-body>
-    </inbound>
-    <backend>
-        <forward-request timeout="60" />
-    </backend>
-    <outbound>
         <choose>
             <when condition="@(
-               context.Response.StatusCode >= 200 &&
-               context.Response.StatusCode < 300
+               (string)context.Variables["Source-System"] == "SAP"
+               &amp;&amp; (string)context.Variables["Target-System"] == "C55"
            )">
-                <set-status code="202" reason="Accepted" />
-                <set-header name="Content-Type" exists-action="override">
-                    <value>application/json</value>
-                </set-header>
-                <set-header name="x-correlation-id" exists-action="override">
-                    <value>@(
-                       (string)context.Variables[
-                           "correlationId"]
-                   )</value>
-                </set-header>
-                <set-body>@{
-                   var target =
-                       (string)context.Variables[
-                           "targetSystem"];
-
-                   return new Newtonsoft.Json.Linq.JObject(
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "statusCode",
-                           202),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "status",
-                           "Accepted"),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "message",
-                           $"The request was accepted for {target} processing."),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "target",
-                           target),
-                   
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "correlationId",
-                           (string)context.Variables[
-                               "correlationId"])
-                   ).ToString(
-                       Newtonsoft.Json.Formatting.None);
-               }</set-body>
+                <set-backend-service backend-id="common-rtf-muga-host" />
+                <rewrite-uri template="{{ga-c55-financials-basepath}}/v1/fundingprojects" copy-unmatched-params="false" />
+            </when>
+            <when condition="@(
+               (string)context.Variables["Source-System"] == "POWERPLAN"
+               &amp;&amp; (string)context.Variables["targetSystem"] == "MAXIMO"
+           )">
+                <set-backend-service backend-id="common-rtf-muga-host" />
+                <rewrite-uri template="/{{ga-maximo-financials-basepath}}/v1/fundingprojects" copy-unmatched-params="false" />
             </when>
             <otherwise>
-                <set-status code="500" reason="Internal Server Error" />
-                <set-body>@{
-                   return new Newtonsoft.Json.Linq.JObject(
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "statusCode",
-                           500),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "code",
-                           "INTERNAL_SERVER_ERROR"),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "message",
-                           "The request could not be processed."),
-                       new Newtonsoft.Json.Linq.JProperty(
-                           "correlationId",
-                           (string)context.Variables[
-                               "correlationId"])
-                   ).ToString(
-                       Newtonsoft.Json.Formatting.None);
-               }</set-body>
+                <return-response>
+                    <set-status code="400" reason="Bad Request" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-header name="x-correlation-id" exists-action="override">
+                        <value>@((string)context.Variables["correlationId"])</value>
+                    </set-header>
+                    <set-body>@{
+                       return new JObject
+                       {
+                           ["fundingProjectResponse"] = new JObject
+                           {
+                               ["code"] = 400,
+                               ["interface"] = "Finance Master - Funding Project",
+                               ["responsedata"] = null,
+                               ["severity"] = "Error",
+                               ["correlationId"] = (string)context.Variables["correlationId"],
+                               ["message"] = "Unsupported route. Use ng_source=SAP with ng_target=C55, or ng_source=PowerPlan with ng_target=Maximo.",
+                               ["status"] = "Failed"
+                           }
+                       }.ToString();
+                   }</set-body>
+                </return-response>
             </otherwise>
         </choose>
-    </outbound>
-    <on-error>
         <set-header name="Content-Type" exists-action="override">
             <value>application/json</value>
         </set-header>
-        <set-status code="@(
-               context.LastError?.PolicyId ==
-                   &quot;parse-request-payload&quot;
-                   ? 400
-                   : 500
-           )" reason="@(
-               context.LastError?.PolicyId ==
-                   &quot;parse-request-payload&quot;
-                   ? &quot;Bad Request&quot;
-                   : &quot;Internal Server Error&quot;
-           )" />
-        <set-body>@{
-           var invalidJson =
-               context.LastError?.PolicyId ==
-                   "parse-request-payload";
-
-           var correlationId =
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+        <!-- Preserve the backend response body, content type, and HTTP status. -->
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@((string)context.Variables["correlationId"])</value>
+        </set-header>
+    </outbound>
+    <on-error>
+        <base />
+        <set-header name="x-correlation-id" exists-action="override">
+            <value>@(
                context.Variables.ContainsKey("correlationId")
                    ? (string)context.Variables["correlationId"]
-                   : context.RequestId.ToString();
-
-           return new Newtonsoft.Json.Linq.JObject(
-               new Newtonsoft.Json.Linq.JProperty(
-                   "statusCode",
-                   invalidJson ? 400 : 500),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "code",
-                   invalidJson
-                       ? "INVALID_JSON"
-                       : "INTERNAL_SERVER_ERROR"),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "message",
-                   invalidJson
-                       ? "The request body must contain a valid JSON object."
-                       : "The request could not be processed."),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "correlationId",
-                   correlationId),
-               new Newtonsoft.Json.Linq.JProperty(
-                   "activityId",
-                   context.RequestId.ToString())
-           ).ToString(Newtonsoft.Json.Formatting.None);
-       }</set-body>
+                   : Guid.NewGuid().ToString()
+           )</value>
+        </set-header>
     </on-error>
 </policies>
