@@ -1,1 +1,242 @@
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace GaValveInspectionsSalesforce.Transformers;
+
+public static class MaximoToSalesforceTransformer
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = false
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> StatusMap =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["WSCH"] = "New"
+        };
+
+    public static string Transform(string maximoPayload, string correlationId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(maximoPayload);
+
+        JsonNode rootNode = ParsePayload(maximoPayload);
+        JsonArray members = ExtractMembers(rootNode);
+
+        if (members.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Maximo payload does not contain any work order members.");
+        }
+
+        JsonArray salesforceRequests = new();
+
+        foreach (JsonNode? memberNode in members)
+        {
+            if (memberNode is not JsonObject memberObject)
+            {
+                throw new InvalidOperationException(
+                    "Invalid Maximo payload. Member entry must be a JSON object.");
+            }
+
+            string requestId = ResolveRequestId(memberObject, correlationId);
+            JsonObject salesforceRequest = BuildSalesforceRequest(memberObject, requestId);
+
+            salesforceRequests.Add(salesforceRequest);
+        }
+
+        JsonObject finalPayload = new()
+        {
+            ["ng_workorderrequest"] = salesforceRequests
+        };
+
+        return finalPayload.ToJsonString(JsonOptions);
+    }
+
+    private static JsonNode ParsePayload(string payload)
+    {
+        try
+        {
+            return JsonNode.Parse(payload)
+                ?? throw new InvalidOperationException(
+                    "Maximo payload is null after parsing.");
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                "Maximo payload is not valid JSON.",
+                ex);
+        }
+    }
+
+    private static JsonArray ExtractMembers(JsonNode rootNode)
+    {
+        if (rootNode is JsonObject rootObject &&
+            rootObject["member"] is JsonArray memberArray)
+        {
+            return memberArray;
+        }
+
+        if (rootNode is JsonArray rootArray)
+        {
+            return rootArray;
+        }
+
+        throw new InvalidOperationException(
+            "Maximo payload must contain a member array or be a JSON array.");
+    }
+
+    private static JsonObject BuildSalesforceRequest(
+        JsonObject memberObject,
+        string requestId)
+    {
+        return new JsonObject
+        {
+            ["ng_metainfo"] = BuildMetaInfo(memberObject, requestId),
+            ["ng_workorder"] = BuildWorkOrder(memberObject),
+            ["woserviceaddress"] = CloneArray(memberObject, "woserviceaddress"),
+            ["location"] = GetString(memberObject, "location"),
+            ["location_description"] = GetString(memberObject, "location_description"),
+            ["locations"] = CloneArray(memberObject, "locations"),
+            ["asset"] = BuildAsset(memberObject)
+        };
+    }
+
+    private static JsonObject BuildMetaInfo(
+        JsonObject memberObject,
+        string requestId)
+    {
+        return new JsonObject
+        {
+            ["ng_requestid"] = requestId,
+            ["ng_requesttype"] = "Create",
+            ["ng_sfordertype"] = GetString(memberObject, "ng_sfordertype"),
+            ["ng_source"] = "Maximo"
+        };
+    }
+
+    private static JsonObject BuildWorkOrder(JsonObject memberObject)
+    {
+        string maximoStatus = GetString(memberObject, "status");
+        string salesforceStatus = ResolveSalesforceStatus(maximoStatus);
+
+        return new JsonObject
+        {
+            ["description"] = GetString(memberObject, "description"),
+            ["description_longdescription"] = GetString(memberObject, "description_longdescription"),
+            ["ng_dept"] = GetString(memberObject, "ng_dept"),
+            ["targstartdate"] = GetString(memberObject, "targstartdate"),
+            ["sneconstraint"] = GetString(memberObject, "sneconstraint"),
+            ["targcompdate"] = GetString(memberObject, "targcompdate"),
+            ["fnlconstraint"] = GetString(memberObject, "fnlconstraint"),
+            ["wosequence"] = GetInteger(memberObject, "wosequence", 0),
+            ["estdur"] = GetInteger(memberObject, "estdur", 1),
+            ["ng_nrstxstrt"] = GetString(memberObject, "ng_nrstxstrt"),
+            ["ng_sfordertype"] = GetString(memberObject, "ng_sfordertype"),
+            ["wonum"] = GetString(memberObject, "wonum"),
+            ["workorderid"] = GetString(memberObject, "workorderid"),
+            ["ng_lob"] = "Gas",
+            ["pmnum"] = GetString(memberObject, "pmnum"),
+            ["status"] = salesforceStatus,
+            ["vendor"] = GetString(memberObject, "vendor"),
+            ["orgid"] = GetString(memberObject, "orgid"),
+            ["siteid"] = GetString(memberObject, "siteid"),
+            ["parentwonum"] = GetString(memberObject, "parentwonum")
+        };
+    }
+
+    private static string ResolveSalesforceStatus(string maximoStatus)
+    {
+        if (string.IsNullOrWhiteSpace(maximoStatus))
+        {
+            return string.Empty;
+        }
+
+        return StatusMap.TryGetValue(
+            maximoStatus.Trim(),
+            out string? salesforceStatus)
+            ? salesforceStatus
+            : maximoStatus.Trim();
+    }
+
+    private static JsonArray BuildAsset(JsonObject memberObject)
+    {
+        JsonObject assetObject = new()
+        {
+            ["assetnum"] = GetString(memberObject, "assetnum"),
+            ["asset_description"] = GetString(memberObject, "asset_description"),
+            ["asset_classification"] = "NG_VALVE"
+        };
+
+        if (memberObject["workorderspec"] is JsonArray workOrderSpecs)
+        {
+            foreach (JsonNode? specNode in workOrderSpecs)
+            {
+                if (specNode is not JsonObject specObject)
+                {
+                    continue;
+                }
+
+                string attributeId = GetString(specObject, "assetattrid");
+
+                if (string.IsNullOrWhiteSpace(attributeId))
+                {
+                    continue;
+                }
+
+                string value = GetString(specObject, "value");
+                assetObject[attributeId.ToUpperInvariant()] = value;
+            }
+        }
+
+        return new JsonArray { assetObject };
+    }
+
+    private static JsonArray CloneArray(
+        JsonObject sourceObject,
+        string propertyName)
+    {
+        return sourceObject[propertyName] is JsonArray jsonArray
+            ? jsonArray.DeepClone().AsArray()
+            : new JsonArray();
+    }
+
+    private static string ResolveRequestId(
+        JsonObject memberObject,
+        string correlationId)
+    {
+        string payloadRequestId = GetString(memberObject, "ng_requestid");
+
+        if (!string.IsNullOrWhiteSpace(payloadRequestId))
+        {
+            return payloadRequestId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(correlationId))
+        {
+            return correlationId;
+        }
+
+        return Guid.NewGuid().ToString();
+    }
+
+    private static string GetString(
+        JsonObject jsonObject,
+        string propertyName)
+    {
+        return jsonObject[propertyName]?.ToString() ?? string.Empty;
+    }
+
+    private static int GetInteger(
+        JsonObject jsonObject,
+        string propertyName,
+        int defaultValue)
+    {
+        return int.TryParse(
+            jsonObject[propertyName]?.ToString(),
+            out int value)
+            ? value
+            : defaultValue;
+    }
+}
