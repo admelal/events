@@ -1,1 +1,550 @@
-{"eventTimestamp":"2026-09-18 12:13:22","action":"ValveLifecycleEnded","globalId":"11697778-001","maximoAssetNumber":"11697778","physicalValveId":"Valve-004","lifeCycleStatus":"RETIRED","assetDescription":null,"serviceTerritoryName":null,"installationDate":null,"classification":null,"regulatoryType":null,"isCriticalValve":null,"isSectionalizingValve":null,"isEGOMPValve":null,"isInterconnectValve":null,"isAutomaticShutoffValve":null,"isRemoteOperatedValve":null,"isRuptureMitigationValve":null,"isLowPressureValve":null,"crossingType":null,"accessType":null,"normalPosition":null,"subSystemName":null,"subSystemPressure":null,"lifecycleEndDate":"2026-09-17 20:00:00","serviceAddress":null,"assetSpecification":null}
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using GaValveInspectionGisMaximo.Contracts;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IGisToMaximoMapper
+{
+    MaximoAssetPayload Map(ValveInspectionEvent source);
+}
+
+public interface IMaximoToGisMapper
+{
+    GisValvePayload Map(ValveInspectionEvent source);
+}
+
+public sealed class GisToMaximoMapper : IGisToMaximoMapper
+{
+    public MaximoAssetPayload Map(ValveInspectionEvent source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        return new MaximoAssetPayload
+        {
+            NgGuid = MapperValue.Optional(source.GlobalId),
+
+            Status = MapperValue.Optional(source.LifeCycleStatus),
+
+            AssetNum = MapperValue.Optional(source.MaximoAssetNumber),
+
+            AssetTag = MapperValue.Optional(source.PhysicalValveId),
+
+            ServiceTerritory =
+                MapperValue.Optional(source.ServiceTerritoryName),
+
+            HierarchyPath =
+                MapperValue.Optional(source.Classification),
+
+            InstallDate =
+                MapperValue.Optional(source.InstallationDate),
+
+            ServiceAddress =
+                BuildServiceAddress(source.ServiceAddress),
+
+            AssetSpec =
+                BuildAssetSpecifications(source)
+        };
+    }
+
+    private static MaximoServiceAddress[]? BuildServiceAddress(
+        ValveServiceAddress?[]? source)
+    {
+        var addresses = MapperValue.Addresses(source);
+
+        if (addresses is null)
+        {
+            return null;
+        }
+
+        return addresses
+            .Select(address => new MaximoServiceAddress
+            {
+                StreetAddress = address.StreetAddress,
+                City = address.City,
+                StateProvince = address.State,
+                PostalCode = address.ZipCode
+            })
+            .ToArray();
+    }
+
+    private static MaximoAssetSpecification[]? BuildAssetSpecifications(
+        ValveInspectionEvent source)
+    {
+        var specifications = new List<MaximoAssetSpecification>(15);
+
+        AddSpecification(
+            specifications,
+            "NG_ACCTYPE",
+            source.AccessType);
+
+        AddSpecification(
+            specifications,
+            "NG_AUTOSHTOFF",
+            source.IsAutomaticShutoffValve);
+
+        AddSpecification(
+            specifications,
+            "NG_CRITICAL",
+            source.IsCriticalValve);
+
+        AddSpecification(
+            specifications,
+            "NG_CROSSTYPE",
+            source.CrossingType);
+
+        AddSpecification(
+            specifications,
+            "NG_DATEOFRETIREMENT",
+            source.LifecycleEndDate,
+            isDate: true);
+
+        AddSpecification(
+            specifications,
+            "NG_EGOMP",
+            source.IsEgompValve);
+
+        AddSpecification(
+            specifications,
+            "NG_INTERCONCT",
+            source.IsInterconnectValve);
+
+        AddSpecification(
+            specifications,
+            "NG_LOWPRS",
+            source.IsLowPressureValve);
+
+        AddSpecification(
+            specifications,
+            "NG_NMPOSITN",
+            source.NormalPosition);
+
+        AddSpecification(
+            specifications,
+            "NG_REGULTYPE",
+            source.RegulatoryType);
+
+        AddSpecification(
+            specifications,
+            "NG_REMOPERTD",
+            source.IsRemoteOperatedValve);
+
+        AddSpecification(
+            specifications,
+            "NG_RUPTUREMIT",
+            source.IsRuptureMitigationValve);
+
+        AddSpecification(
+            specifications,
+            "NG_SECTNLIZING",
+            source.IsSectionalizingValve);
+
+        AddSpecification(
+            specifications,
+            "NG_SUBSYSNM",
+            source.SubSystemName);
+
+        AddSpecification(
+            specifications,
+            "NG_SUBSYSPRS",
+            source.SubSystemPressure);
+
+        return specifications.Count == 0
+            ? null
+            : specifications.ToArray();
+    }
+
+    private static void AddSpecification(
+        ICollection<MaximoAssetSpecification> specifications,
+        string attributeId,
+        JsonElement? value,
+        bool isDate = false)
+    {
+        var suppliedValue = MapperValue.Optional(value);
+
+        if (suppliedValue is null)
+        {
+            return;
+        }
+
+        specifications.Add(new MaximoAssetSpecification
+        {
+            AssetAttributeId = attributeId,
+            AlnValue = isDate ? null : suppliedValue,
+
+            // Selects DATEVALUE; does not parse or format the value.
+            DateValue = isDate ? suppliedValue : null
+        });
+    }
+}
+
+public sealed class MaximoToGisMapper : IMaximoToGisMapper
+{
+    public GisValvePayload Map(ValveInspectionEvent source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        var action = MapperValue.ForLog(source.Action)?.Trim();
+
+        // Select the requested output shape without rejecting
+        // missing or unrecognized actions.
+        var isInitiated = string.Equals(
+            action,
+            "ValveLifecycleInitiated",
+            StringComparison.OrdinalIgnoreCase);
+
+        var isObserved = string.Equals(
+            action,
+            "ValveConditionObserved",
+            StringComparison.OrdinalIgnoreCase);
+
+        var isEnded = string.Equals(
+            action,
+            "ValveLifecycleEnded",
+            StringComparison.OrdinalIgnoreCase);
+
+        var hasSpecifiedShape =
+            isInitiated || isObserved || isEnded;
+
+        var includeDetails =
+            !isObserved && !isEnded;
+
+        return new GisValvePayload
+        {
+            EventTimestamp =
+                MapperValue.Optional(source.EventTimestamp),
+
+            Action =
+                MapperValue.Optional(source.Action),
+
+            GlobalId = isInitiated
+                ? null
+                : MapperValue.Optional(source.GlobalId)
+                    ?? MapperValue.Optional(source.GlobalIdFromMaximo),
+
+            MaximoAssetNumber =
+                MapperValue.Optional(source.MaximoAssetNumber)
+                ?? MapperValue.Optional(source.MaximoAssetNumberFromMaximo)
+                ?? MapperValue.Optional(source.AssetId),
+
+            PhysicalValveId =
+                MapperValue.Optional(source.PhysicalValveId)
+                ?? MapperValue.Optional(source.AssetTagFromMaximo),
+
+            LifeCycleStatus = FormatLifeCycleStatus(
+                MapperValue.Optional(source.Status)
+                ?? MapperValue.Optional(source.LifeCycleStatus)),
+
+            AssetDescription = includeDetails
+                ? MapperValue.Optional(source.AssetDescription)
+                    ?? MapperValue.Optional(source.DescriptionFromMaximo)
+                : null,
+
+            ServiceAddress = includeDetails
+                ? MapperValue.Addresses(
+                    source.ServiceAddress,
+                    useMaximoAliases: true)
+                : null,
+
+            AssetSpecification = includeDetails
+                ? BuildBenchmarks(source.AssetSpecFromMaximo)
+                : null,
+            LifecycleEndDate = isInitiated || isObserved
+                ? null
+                : MapperValue.Optional(source.LifecycleEndDate)
+                    ?? ReadSpecification(
+                        source.AssetSpecFromMaximo,
+                        "NG_DATEOFRETIREMENT"),
+
+            ServiceTerritoryName = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.ServiceTerritoryName),
+
+            InstallationDate = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.InstallationDate),
+
+            Classification = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.Classification),
+
+            RegulatoryType = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.RegulatoryType),
+
+            IsCriticalValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsCriticalValve),
+
+            IsSectionalizingValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsSectionalizingValve),
+
+            IsEgompValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsEgompValve),
+
+            IsInterconnectValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsInterconnectValve),
+
+            IsAutomaticShutoffValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsAutomaticShutoffValve),
+
+            IsRemoteOperatedValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsRemoteOperatedValve),
+
+            IsRuptureMitigationValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsRuptureMitigationValve),
+
+            IsLowPressureValve = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.IsLowPressureValve),
+
+            CrossingType = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.CrossingType),
+
+            AccessType = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.AccessType),
+
+            NormalPosition = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.NormalPosition),
+
+            SubSystemName = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.SubSystemName),
+
+            SubSystemPressure = hasSpecifiedShape
+                ? null
+                : MapperValue.Optional(source.SubSystemPressure)
+        };
+    }
+
+    private static GisAssetSpecification[]? BuildBenchmarks(
+        JsonElement? assetSpec)
+    {
+        if (assetSpec is not { ValueKind: JsonValueKind.Array } array)
+        {
+            return null;
+        }
+
+        var values =
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        foreach (var entry in array.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (var property in entry.EnumerateObject())
+            {
+                if (!TryGetBenchmarkFieldName(
+                        property.Name,
+                        out var fieldName))
+                {
+                    continue;
+                }
+
+                var value = MapperValue.Optional(property.Value);
+
+                if (value is { } suppliedValue)
+                {
+                    values.TryAdd(fieldName, suppliedValue);
+                }
+            }
+        }
+
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        return
+        [
+            new GisAssetSpecification
+           {
+               Values = values
+           }
+        ];
+    }
+
+    private static bool TryGetBenchmarkFieldName(
+        string sourceName,
+        out string fieldName)
+    {
+        const string prefix = "NG_BNCHMK";
+
+        fieldName = string.Empty;
+
+        if (!sourceName.StartsWith(
+                prefix,
+                StringComparison.OrdinalIgnoreCase)
+            || sourceName.Length == prefix.Length)
+        {
+            return false;
+        }
+
+        foreach (var character in sourceName.AsSpan(prefix.Length))
+        {
+            if (character is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        fieldName = "benchmark" + sourceName[prefix.Length..];
+
+        return true;
+    }
+
+    private static JsonElement? ReadSpecification(
+        JsonElement? assetSpec,
+        string fieldName)
+    {
+        if (assetSpec is not { ValueKind: JsonValueKind.Array } array)
+        {
+            return null;
+        }
+
+        foreach (var entry in array.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            foreach (var property in entry.EnumerateObject())
+            {
+                if (!string.Equals(
+                        property.Name,
+                        fieldName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var value = MapperValue.Optional(property.Value);
+
+                if (value is not null)
+                {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static JsonElement? FormatLifeCycleStatus(JsonElement? value)
+    {
+        var suppliedValue = MapperValue.Optional(value);
+
+        if (suppliedValue is not { ValueKind: JsonValueKind.String } element)
+        {
+            return suppliedValue;
+        }
+        var status = new string(
+                element.GetString()!
+                    .Where(character => !char.IsWhiteSpace(character))
+                    .ToArray())
+            .ToUpperInvariant();
+
+        return JsonSerializer.SerializeToElement(status);
+    }
+}
+
+internal static class MapperValue
+{
+    public static JsonElement? Optional(JsonElement? value)
+    {
+        if (value is not { } element
+            || element.ValueKind is JsonValueKind.Null
+                or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (element.ValueKind == JsonValueKind.String
+            && string.IsNullOrWhiteSpace(element.GetString()))
+        {
+            return null;
+        }
+
+        return element.Clone();
+    }
+
+    public static ValveServiceAddress[]? Addresses(
+        ValveServiceAddress?[]? source,
+        bool useMaximoAliases = false)
+    {
+        if (source is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        var addresses = new List<ValveServiceAddress>(source.Length);
+
+        foreach (var input in source)
+        {
+            if (input is null)
+            {
+                continue;
+            }
+
+            var address = new ValveServiceAddress
+            {
+                StreetAddress = Optional(input.StreetAddress),
+
+                City = Optional(input.City),
+
+                State = Optional(input.State)
+                    ?? (useMaximoAliases
+                        ? Optional(input.StateProvinceFromMaximo)
+                        : null),
+
+                ZipCode = Optional(input.ZipCode)
+                    ?? (useMaximoAliases
+                        ? Optional(input.PostalCodeFromMaximo)
+                        : null)
+            };
+
+            if (address.StreetAddress is null
+                && address.City is null
+                && address.State is null
+                && address.ZipCode is null)
+            {
+                continue;
+            }
+
+            addresses.Add(address);
+        }
+
+        return addresses.Count == 0
+            ? null
+            : addresses.ToArray();
+    }
+
+    public static string? ForLog(JsonElement? value)
+    {
+        var suppliedValue = Optional(value);
+
+        if (suppliedValue is not { } element)
+        {
+            return null;
+        }
+
+        return element.ValueKind == JsonValueKind.String
+            ? element.GetString()
+            : element.GetRawText();
+    }
+}
