@@ -1,0 +1,551 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using GaValveInspectionGisMaximo.Configuration;
+using GaValveInspectionGisMaximo.Contracts;
+using GaValveInspectionGisMaximo.Serialization;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GaValveInspectionGisMaximo.Services;
+
+public interface IArcGisClient
+{
+    Task<int> SendAsync(
+        GisSendCommand command,
+        CancellationToken cancellationToken);
+}
+
+public sealed class ArcGisClient : IArcGisClient
+{
+    public const string HttpClientName = "ArcGisService";
+
+    private const int MaximumResponseCharacters = 65_536;
+    private const int InvalidTokenErrorCode = 498;
+
+    private const int MaximumSendAttempts = 2;
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IArcGisTokenProvider _tokenProvider;
+    private readonly ILogger<ArcGisClient> _logger;
+    private readonly Uri _endpoint;
+    private readonly Uri? _referer;
+    private readonly TimeSpan _requestTimeout;
+    private readonly string _payloadParameterName;
+
+    public ArcGisClient(
+        IHttpClientFactory httpClientFactory,
+        IArcGisTokenProvider tokenProvider,
+        IOptions<DownstreamOptions> options,
+        ILogger<ArcGisClient> logger)
+    {
+        ArgumentNullException.ThrowIfNull(httpClientFactory);
+        ArgumentNullException.ThrowIfNull(tokenProvider);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _httpClientFactory = httpClientFactory;
+        _tokenProvider = tokenProvider;
+        _logger = logger;
+
+        var configuration = options.Value;
+
+        _endpoint = BuildEndpoint(
+            configuration.GisHost,
+            configuration.GisValveInspectionPath);
+
+        _referer = new Uri(configuration.GisReferer,
+        UriKind.Absolute);
+
+        _requestTimeout = TimeSpan.FromSeconds(
+            configuration.GisTimeoutSeconds);
+
+        _payloadParameterName =
+            configuration.GisPayloadParameterName;
+    }
+
+    public async Task<int> SendAsync(
+        GisSendCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ArgumentNullException.ThrowIfNull(command.Payload);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.CorrelationId);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var payloadJson = JsonSerializer.Serialize(
+            command.Payload,
+            JsonDefaults.Options);
+
+        _logger.LogInformation(
+            "Prepared outgoing GIS payload. " +
+            "CorrelationId={CorrelationId}, Action={Action}, " +
+            "PayloadParameterName={PayloadParameterName}, " +
+            "OutputPayload={OutputPayload}",
+            command.CorrelationId,
+            command.Action,
+            _payloadParameterName,
+            payloadJson);
+
+        try
+        {
+            for (var attempt = 1; attempt <= MaximumSendAttempts; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                _logger.LogInformation(
+                    "Obtaining ArcGIS access token. " +
+                    "CorrelationId={CorrelationId}, Attempt={Attempt}",
+                    command.CorrelationId,
+                    attempt);
+
+                var token = await _tokenProvider
+                    .GetTokenAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+                _logger.LogInformation(
+                    "ArcGIS access token is available. " +
+                    "CorrelationId={CorrelationId}, Attempt={Attempt}",
+                    command.CorrelationId,
+                    attempt);
+
+                var result = await SendRequestAsync(
+                        command,
+                        payloadJson,
+                        token,
+                        attempt,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                if ((int)result.StatusCode == InvalidTokenErrorCode)
+                {
+                    InvalidateRejectedToken(command, attempt);
+
+                    if (attempt < MaximumSendAttempts)
+                    {
+                        continue;
+                    }
+
+                    throw DownstreamRequestException.ForHttpStatus(
+                        "ArcGIS",
+                        result.StatusCode);
+                }
+
+                if (!result.IsSuccessStatusCode)
+                {
+                    throw DownstreamRequestException.ForHttpStatus(
+                        "ArcGIS",
+                        result.StatusCode);
+                }
+
+                var arcGisError = ArcGisErrorParser.GetErrorOrThrow(
+                    result.ResponseBody,
+                    "ArcGIS");
+
+                if (arcGisError?.Code == InvalidTokenErrorCode)
+                {
+                    InvalidateRejectedToken(command, attempt);
+
+                    if (attempt < MaximumSendAttempts)
+                    {
+                        continue;
+                    }
+
+                    throw ArcGisErrorParser.CreateException(
+                        arcGisError,
+                        "ArcGIS");
+                }
+
+                if (arcGisError is not null)
+                {
+                    throw ArcGisErrorParser.CreateException(
+                        arcGisError,
+                        "ArcGIS");
+                }
+
+                _logger.LogInformation(
+                    "ArcGIS submission returned successfully. " +
+                    "CorrelationId={CorrelationId}, Action={Action}, " +
+                    "HttpStatusCode={HttpStatusCode}, Attempt={Attempt}",
+                    command.CorrelationId,
+                    command.Action,
+                    (int)result.StatusCode,
+                    attempt);
+
+                return (int)result.StatusCode;
+            }
+
+            throw new InvalidOperationException(
+                "The ArcGIS request completed without a result.");
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "ArcGIS request was cancelled. " +
+                "CorrelationId={CorrelationId}, Action={Action}",
+                command.CorrelationId,
+                command.Action);
+
+            throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            _logger.LogError(
+                exception,
+                "ArcGIS operation timed out. " +
+                "CorrelationId={CorrelationId}, Action={Action}, " +
+                "Endpoint={Endpoint}",
+                command.CorrelationId,
+                command.Action,
+                _endpoint);
+
+            throw new DownstreamRequestException(
+                "The ArcGIS operation timed out.",
+                HttpStatusCode.RequestTimeout,
+                isTransient: true,
+                exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            _logger.LogError(
+                exception,
+                "ArcGIS request failed because of a network error. " +
+                "CorrelationId={CorrelationId}, Action={Action}, " +
+                "Endpoint={Endpoint}",
+                command.CorrelationId,
+                command.Action,
+                _endpoint);
+
+            throw new DownstreamRequestException(
+                "The ArcGIS request failed because of a network error.",
+                exception.StatusCode,
+                isTransient: true,
+                exception);
+        }
+        catch (DownstreamRequestException exception)
+        {
+            _logger.LogError(
+                exception,
+                "ArcGIS request failed. " +
+                "CorrelationId={CorrelationId}, Action={Action}, " +
+                "Endpoint={Endpoint}",
+                command.CorrelationId,
+                command.Action,
+                _endpoint);
+
+            throw;
+        }
+    }
+
+    private async Task<ArcGisHttpResult> SendRequestAsync(
+        GisSendCommand command,
+        string payloadJson,
+        string token,
+        int attempt,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutSource =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+
+        timeoutSource.CancelAfter(_requestTimeout);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            _endpoint);
+
+        request.Headers.TryAddWithoutValidation(
+            "x-correlation-id",
+            command.CorrelationId);
+
+        if (_referer is not null)
+        {
+            request.Headers.Referrer = _referer;
+        }
+
+        request.Content = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+           new KeyValuePair<string, string>("token", token),
+           new KeyValuePair<string, string>(
+               _payloadParameterName,
+               payloadJson)
+        ]);
+
+        _logger.LogInformation(
+            "Sending request to ArcGIS. " +
+            "CorrelationId={CorrelationId}, Action={Action}, " +
+            "Endpoint={Endpoint}, Attempt={Attempt}",
+            command.CorrelationId,
+            command.Action,
+            _endpoint,
+            attempt);
+
+        using var client = _httpClientFactory.CreateClient(
+            HttpClientName);
+
+        using var response = await client
+            .SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                timeoutSource.Token)
+            .ConfigureAwait(false);
+
+        var responseBody = await response.Content
+            .ReadLimitedStringAsync(
+                MaximumResponseCharacters,
+                timeoutSource.Token)
+            .ConfigureAwait(false);
+
+        _logger.LogInformation(
+           "Received GIS response. " +
+           "CorrelationId={CorrelationId}, " +
+           "Action={Action}, " +
+           "HttpStatusCode={HttpStatusCode}, " +
+           "Attempt={Attempt}, " +
+           "ResponseBody={ResponseBody}",
+           command.CorrelationId,
+           command.Action,
+           (int)response.StatusCode,
+           attempt,
+           responseBody);
+
+        _logger.LogDebug(
+            "ArcGIS response body. " +
+            "CorrelationId={CorrelationId}, ResponseBody={ResponseBody}",
+            command.CorrelationId,
+            responseBody);
+
+        return new ArcGisHttpResult(
+            response.StatusCode,
+            response.IsSuccessStatusCode,
+            responseBody);
+    }
+
+    private void InvalidateRejectedToken(
+        GisSendCommand command,
+        int attempt)
+    {
+        _tokenProvider.InvalidateToken();
+
+        _logger.LogWarning(
+            "ArcGIS rejected the access token; cached token invalidated. " +
+            "CorrelationId={CorrelationId}, Action={Action}, " +
+            "ArcGisErrorCode={ArcGisErrorCode}, Attempt={Attempt}, " +
+            "WillRetry={WillRetry}",
+            command.CorrelationId,
+            command.Action,
+            InvalidTokenErrorCode,
+            attempt,
+            attempt < MaximumSendAttempts);
+    }
+
+    private static Uri BuildEndpoint(string host, string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var baseUri = new Uri(
+            $"{host.TrimEnd('/')}/",
+            UriKind.Absolute);
+
+        return new Uri(baseUri, path.TrimStart('/'));
+    }
+
+    private sealed record ArcGisHttpResult(
+        HttpStatusCode StatusCode,
+        bool IsSuccessStatusCode,
+        string ResponseBody);
+}
+
+internal sealed record ArcGisErrorInfo(
+   int? Code,
+   string Message,
+   string? Details);
+
+internal static class ArcGisErrorParser
+{
+    public static ArcGisErrorInfo? GetErrorOrThrow(
+        string responseBody,
+        string target)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return null;
+        }
+
+        JsonDocument document;
+
+        try
+        {
+            document = JsonDocument.Parse(responseBody);
+        }
+        catch (JsonException exception)
+        {
+            throw new DownstreamRequestException(
+                $"{target} returned an invalid JSON response.",
+                statusCode: null,
+                isTransient: false,
+                exception);
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("error", out var error)
+                || !IsActualError(error))
+            {
+                return null;
+            }
+
+            return new ArcGisErrorInfo(
+                GetErrorCode(error),
+                GetErrorMessage(error),
+                GetErrorDetails(error));
+        }
+    }
+
+    public static void ThrowIfArcGisError(
+        string responseBody,
+        string target)
+    {
+        var error = GetErrorOrThrow(responseBody, target);
+
+        if (error is not null)
+        {
+            throw CreateException(error, target);
+        }
+    }
+
+    public static DownstreamRequestException CreateException(
+        ArcGisErrorInfo error,
+        string target)
+    {
+        var description = string.IsNullOrWhiteSpace(error.Details)
+            ? error.Message
+            : $"{error.Message} Details: {error.Details}";
+
+        return new DownstreamRequestException(
+            $"{target} returned application error " +
+            $"{FormatErrorCode(error.Code)}. {description}",
+            GetHttpStatusCode(error.Code),
+            IsTransientError(error.Code));
+    }
+
+    public static bool IsTransientError(int? errorCode)
+    {
+        return errorCode is 408 or 429 or 498
+            || errorCode is >= 500 and <= 599;
+    }
+
+    private static bool IsActualError(JsonElement error)
+    {
+        return error.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => false,
+
+            JsonValueKind.String =>
+                !string.IsNullOrWhiteSpace(error.GetString()),
+
+            JsonValueKind.Object =>
+                error.EnumerateObject().Any(),
+
+            _ => false
+        };
+    }
+
+    private static int? GetErrorCode(JsonElement error)
+    {
+        if (error.ValueKind != JsonValueKind.Object
+            || !error.TryGetProperty("code", out var code))
+        {
+            return null;
+        }
+
+        if (code.ValueKind == JsonValueKind.Number
+            && code.TryGetInt32(out var numericCode))
+        {
+            return numericCode;
+        }
+
+        if (code.ValueKind == JsonValueKind.String
+            && int.TryParse(
+                code.GetString(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out numericCode))
+        {
+            return numericCode;
+        }
+
+        return null;
+    }
+
+    private static string GetErrorMessage(JsonElement error)
+    {
+        if (error.ValueKind == JsonValueKind.String)
+        {
+            return error.GetString()?.Trim()
+                ?? "No error message was provided.";
+        }
+
+        if (error.ValueKind == JsonValueKind.Object
+            && error.TryGetProperty("message", out var messageElement)
+            && messageElement.ValueKind == JsonValueKind.String)
+        {
+            var message = messageElement.GetString();
+
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message.Trim();
+            }
+        }
+
+        return "No error message was provided.";
+    }
+
+    private static string? GetErrorDetails(JsonElement error)
+    {
+        if (error.ValueKind != JsonValueKind.Object
+            || !error.TryGetProperty("details", out var detailsElement)
+            || detailsElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var details = detailsElement
+            .EnumerateArray()
+            .Where(element => element.ValueKind == JsonValueKind.String)
+            .Select(element => element.GetString()?.Trim())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return details.Length == 0
+            ? null
+            : string.Join(" ", details);
+    }
+
+    private static string FormatErrorCode(int? errorCode)
+    {
+        return errorCode?.ToString(CultureInfo.InvariantCulture)
+            ?? "unknown";
+    }
+
+    private static HttpStatusCode? GetHttpStatusCode(int? errorCode)
+    {
+        return errorCode is >= 100 and <= 599
+            ? (HttpStatusCode)errorCode.Value
+            : null;
+    }
+}
