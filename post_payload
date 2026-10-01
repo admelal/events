@@ -26,18 +26,19 @@ public sealed class ArcGisClient : IArcGisClient
 {
     public const string HttpClientName = "ArcGisService";
 
+    private const string PayloadParameterName = "post_payload";
     private const int MaximumResponseCharacters = 65_536;
     private const int InvalidTokenErrorCode = 498;
 
+    // One initial submission and one retry after token rejection.
     private const int MaximumSendAttempts = 2;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IArcGisTokenProvider _tokenProvider;
     private readonly ILogger<ArcGisClient> _logger;
     private readonly Uri _endpoint;
-    private readonly Uri? _referer;
+    private readonly Uri _referer;
     private readonly TimeSpan _requestTimeout;
-    private readonly string _payloadParameterName;
 
     public ArcGisClient(
         IHttpClientFactory httpClientFactory,
@@ -61,14 +62,12 @@ public sealed class ArcGisClient : IArcGisClient
             configuration.GisHost,
             configuration.GisValveInspectionPath);
 
-        _referer = new Uri(configuration.GisReferer,
-        UriKind.Absolute);
+        _referer = new Uri(
+            configuration.GisReferer,
+            UriKind.Absolute);
 
         _requestTimeout = TimeSpan.FromSeconds(
             configuration.GisTimeoutSeconds);
-
-        _payloadParameterName =
-            configuration.GisPayloadParameterName;
     }
 
     public async Task<int> SendAsync(
@@ -77,10 +76,13 @@ public sealed class ArcGisClient : IArcGisClient
     {
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(command.Payload);
-        ArgumentException.ThrowIfNullOrWhiteSpace(command.CorrelationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            command.CorrelationId);
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Serialize the mapped payload once.
+        // FormUrlEncodedContent handles URL encoding later.
         var payloadJson = JsonSerializer.Serialize(
             command.Payload,
             JsonDefaults.Options);
@@ -92,12 +94,14 @@ public sealed class ArcGisClient : IArcGisClient
             "OutputPayload={OutputPayload}",
             command.CorrelationId,
             command.Action,
-            _payloadParameterName,
+            PayloadParameterName,
             payloadJson);
 
         try
         {
-            for (var attempt = 1; attempt <= MaximumSendAttempts; attempt++)
+            for (var attempt = 1;
+                 attempt <= MaximumSendAttempts;
+                 attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -125,6 +129,7 @@ public sealed class ArcGisClient : IArcGisClient
                         cancellationToken)
                     .ConfigureAwait(false);
 
+                // ArcGIS may reject a token through the HTTP status.
                 if ((int)result.StatusCode == InvalidTokenErrorCode)
                 {
                     InvalidateRejectedToken(command, attempt);
@@ -146,6 +151,7 @@ public sealed class ArcGisClient : IArcGisClient
                         result.StatusCode);
                 }
 
+                // ArcGIS may also return an error inside HTTP 200 JSON.
                 var arcGisError = ArcGisErrorParser.GetErrorOrThrow(
                     result.ResponseBody,
                     "ArcGIS");
@@ -267,28 +273,41 @@ public sealed class ArcGisClient : IArcGisClient
             "x-correlation-id",
             command.CorrelationId);
 
-        if (_referer is not null)
-        {
-            request.Headers.Referrer = _referer;
-        }
+        request.Headers.Referrer = _referer;
 
+        // Automatically sets:
+        // Content-Type: application/x-www-form-urlencoded
+        //
+        // post_payload contains the complete mapped JSON.
         request.Content = new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("f", "json"),
-           new KeyValuePair<string, string>("token", token),
-           new KeyValuePair<string, string>(
-               _payloadParameterName,
-               payloadJson)
-        ]);
+            new[]
+            {
+                new KeyValuePair<string, string>(
+                    "f",
+                    "json"),
 
+                new KeyValuePair<string, string>(
+                    "token",
+                    token),
+
+                new KeyValuePair<string, string>(
+                    PayloadParameterName,
+                    payloadJson)
+            });
+
+        // Log request metadata, not the form body containing the token.
         _logger.LogInformation(
             "Sending request to ArcGIS. " +
             "CorrelationId={CorrelationId}, Action={Action}, " +
-            "Endpoint={Endpoint}, Attempt={Attempt}",
+            "Endpoint={Endpoint}, Attempt={Attempt}, " +
+            "ContentType={ContentType}, " +
+            "PayloadParameterName={PayloadParameterName}",
             command.CorrelationId,
             command.Action,
             _endpoint,
-            attempt);
+            attempt,
+            request.Content.Headers.ContentType?.MediaType,
+            PayloadParameterName);
 
         using var client = _httpClientFactory.CreateClient(
             HttpClientName);
@@ -307,22 +326,14 @@ public sealed class ArcGisClient : IArcGisClient
             .ConfigureAwait(false);
 
         _logger.LogInformation(
-           "Received GIS response. " +
-           "CorrelationId={CorrelationId}, " +
-           "Action={Action}, " +
-           "HttpStatusCode={HttpStatusCode}, " +
-           "Attempt={Attempt}, " +
-           "ResponseBody={ResponseBody}",
-           command.CorrelationId,
-           command.Action,
-           (int)response.StatusCode,
-           attempt,
-           responseBody);
-
-        _logger.LogDebug(
-            "ArcGIS response body. " +
-            "CorrelationId={CorrelationId}, ResponseBody={ResponseBody}",
+            "Received GIS response. " +
+            "CorrelationId={CorrelationId}, Action={Action}, " +
+            "HttpStatusCode={HttpStatusCode}, Attempt={Attempt}, " +
+            "ResponseBody={ResponseBody}",
             command.CorrelationId,
+            command.Action,
+            (int)response.StatusCode,
+            attempt,
             responseBody);
 
         return new ArcGisHttpResult(
@@ -349,7 +360,9 @@ public sealed class ArcGisClient : IArcGisClient
             attempt < MaximumSendAttempts);
     }
 
-    private static Uri BuildEndpoint(string host, string path)
+    private static Uri BuildEndpoint(
+        string host,
+        string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -358,7 +371,9 @@ public sealed class ArcGisClient : IArcGisClient
             $"{host.TrimEnd('/')}/",
             UriKind.Absolute);
 
-        return new Uri(baseUri, path.TrimStart('/'));
+        return new Uri(
+            baseUri,
+            path.TrimStart('/'));
     }
 
     private sealed record ArcGisHttpResult(
@@ -368,9 +383,9 @@ public sealed class ArcGisClient : IArcGisClient
 }
 
 internal sealed record ArcGisErrorInfo(
-   int? Code,
-   string Message,
-   string? Details);
+    int? Code,
+    string Message,
+    string? Details);
 
 internal static class ArcGisErrorParser
 {
@@ -420,7 +435,9 @@ internal static class ArcGisErrorParser
         string responseBody,
         string target)
     {
-        var error = GetErrorOrThrow(responseBody, target);
+        var error = GetErrorOrThrow(
+            responseBody,
+            target);
 
         if (error is not null)
         {
@@ -501,7 +518,9 @@ internal static class ArcGisErrorParser
         }
 
         if (error.ValueKind == JsonValueKind.Object
-            && error.TryGetProperty("message", out var messageElement)
+            && error.TryGetProperty(
+                "message",
+                out var messageElement)
             && messageElement.ValueKind == JsonValueKind.String)
         {
             var message = messageElement.GetString();
@@ -518,7 +537,9 @@ internal static class ArcGisErrorParser
     private static string? GetErrorDetails(JsonElement error)
     {
         if (error.ValueKind != JsonValueKind.Object
-            || !error.TryGetProperty("details", out var detailsElement)
+            || !error.TryGetProperty(
+                "details",
+                out var detailsElement)
             || detailsElement.ValueKind != JsonValueKind.Array)
         {
             return null;
@@ -526,9 +547,12 @@ internal static class ArcGisErrorParser
 
         var details = detailsElement
             .EnumerateArray()
-            .Where(element => element.ValueKind == JsonValueKind.String)
-            .Select(element => element.GetString()?.Trim())
-            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Where(element =>
+                element.ValueKind == JsonValueKind.String)
+            .Select(element =>
+                element.GetString()?.Trim())
+            .Where(value =>
+                !string.IsNullOrWhiteSpace(value))
             .ToArray();
 
         return details.Length == 0
