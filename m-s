@@ -1,1 +1,116 @@
 
+Requirement
+Existing Core Transformation Structure Preserved
+Modify the Transformed Payload and whatever coming inside "workorderspec" and "asset" from maximo should be passed to salesforce without any modification.
+"ng_sapwonum" is newly added field and should be mapped with "ng_sapwonum"
+{
+    "member": [
+        {
+            "asset": [
+                {
+                    "asset_description": "relayed with main in 2020, new 12in valve installed, updated info",
+                    "assettag": "TESTAB1004H1"
+                }
+            ],
+            "assetnum": "ABI004H1",
+            "description": "MANDATED-CRITICAL VALVE INSP",
+            "fnlconstraint": "2026-09-23 07:00:00",
+            "location": null,
+            "ng_department": "IR",
+            "ng_jurisdiction": "MA",
+            "ng_opco": "5340",
+            "ng_servterritory": "MA Lowell Construct",
+            "ng_sfcommodity": "Gas",
+            "ng_sfordertype": "Inspection - Valve",
+            "orgid": "NATGRID",
+            "parentwonum": "17651195",
+            "pmnum": "4473270",
+            "ng_sapwonum": "20000149388",
+            "siteid": "NGRID",
+            "sneconstraint": "2026-09-23 07:00:00",
+            "status": "WSCH",
+            "targcompdate": "2026-09-23 07:00:00",
+            "targstartdate": "2026-09-23 07:00:00",
+            "wonum": "17651196",
+            "workorderid": 15824758,
+            "workorderspec": [
+                {
+                    "assetattrid": "NG_BNCHMK1",
+                    "value": "BENCHMARK 1 value"
+                },
+                {
+                    "assetattrid": "NG_BNCHMK2",
+                    "value": "BENCHMARK 2 value"
+                },
+                {
+                    "assetattrid": "NG_BNCHMK3",
+                    "value": "BENCHMARK 3 value"
+                },
+                {
+                    "assetattrid": "NG_BNCHMK4",
+                    "value": "BENCHMARK 4 value"
+                },
+                {
+                    "assetattrid": "NG_CURPOSITN",
+                    "value": "Open"
+                },
+                {
+                    "assetattrid": "NG_DESIGNTYPE",
+                    "value": "Butterfly"
+                },
+                {
+                    "assetattrid": "NG_DIRECO",
+                    "value": "Clockwise"
+                },
+                {
+                    "assetattrid": "NG_GASCLRREQ",
+                    "value": "Yes"
+                },
+                {
+                    "assetattrid": "NG_NMPOSITN",
+                    "value": "Normally Closed"
+                },
+                {
+                    "assetattrid": "NG_NUMBEROFTURNS",
+                    "value": ""
+                },
+                {
+                    "assetattrid": "NG_NUMTURNS",
+                    "value": ""
+                },
+                {
+                    "assetattrid": "NG_REGULTYPE",
+                    "value": "Distribution"
+                },
+                {
+                    "assetattrid": "NG_SIZE",
+                    "value": ""
+                },
+                {
+                    "assetattrid": "NG_VALVEMATERIAL",
+                    "value": ""
+                },
+                {
+                    "assetattrid": "NG_VALVFUN",
+                    "value": ""
+                },
+                {
+                    "assetattrid": "NG_NUMTURN",
+                    "value": ""
+                }
+            ],
+            "worktype": "PM",
+            "woserviceaddress": [
+                {
+                    "streetaddress": "1209 BEDFORD ST",
+                    "addressline2": "HIGHLAND RD",
+                    "addressline3": "LOWELL RD",
+                    "city": "ABINGTON",
+                    "county": null,
+                    "stateprovince": "MA",
+                    "postalcode": "02351"
+                }
+            ]
+        }
+    ]
+}
