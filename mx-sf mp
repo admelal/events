@@ -1,0 +1,262 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace GaValveInspectionsSalesforce.Transformers;
+
+public static class MaximoToSalesforceTransformer
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = false
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> StatusMap =
+        new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["WSCH"] = "New"
+        };
+
+    public static string Transform(
+        string maximoPayload,
+        string correlationId)
+    {
+        JsonNode rootNode =
+            JsonNode.Parse(maximoPayload)!;
+
+        JsonArray members =
+            rootNode is JsonObject rootObject
+                ? rootObject["member"]!.AsArray()
+                : rootNode.AsArray();
+
+        JsonArray salesforceRequests = new();
+
+        foreach (JsonNode? memberNode in members)
+        {
+            JsonObject memberObject =
+                memberNode!.AsObject();
+
+            JsonObject salesforceRequest =
+                BuildSalesforceRequest(
+                    memberObject,
+                    correlationId);
+
+            salesforceRequests.Add(
+                salesforceRequest);
+        }
+
+        JsonObject finalPayload = new()
+        {
+            ["ng_workorderrequest"] =
+                salesforceRequests
+        };
+
+        return finalPayload.ToJsonString(
+            JsonOptions);
+    }
+
+    private static JsonObject BuildSalesforceRequest(
+        JsonObject memberObject,
+        string correlationId)
+    {
+        return new JsonObject
+        {
+            ["ng_metainfo"] =
+                BuildMetaInfo(
+                    memberObject,
+                    correlationId),
+
+            ["ng_workorder"] =
+                BuildWorkOrder(
+                    memberObject),
+
+            ["workorderspec"] =
+                Clone(
+                    memberObject["workorderspec"]),
+            ["asset"] =
+                Clone(
+                    memberObject["asset"]),
+            ["woserviceaddress"] =
+                Clone(
+                    memberObject["woserviceaddress"])
+        };
+    }
+
+    private static JsonObject BuildMetaInfo(
+        JsonObject memberObject,
+        string correlationId)
+    {
+        return new JsonObject
+        {
+            ["ng_requestid"] =
+                memberObject["ng_requestid"] is not null
+                    ? Clone(memberObject["ng_requestid"])
+                    : JsonValue.Create(correlationId),
+
+            ["ng_requesttype"] =
+                "Create",
+
+            ["ng_sfordertype"] =
+                Clone(
+                    memberObject["ng_sfordertype"]),
+
+            ["ng_source"] =
+                "Maximo"
+        };
+    }
+
+    private static JsonObject BuildWorkOrder(
+        JsonObject memberObject)
+    {
+        return new JsonObject
+        {
+            ["description"] =
+                Clone(
+                    memberObject["description"]),
+
+            ["description_longdescription"] =
+                Clone(
+                    memberObject["description_longdescription"]),
+
+            ["ng_dept"] =
+                Clone(
+                    memberObject["ng_department"]),
+
+            ["ng_jurisdiction"] =
+                Clone(
+                    memberObject["ng_jurisdiction"]),
+
+            ["ng_opco"] =
+                Clone(
+                    memberObject["ng_opco"]),
+
+            ["ng_servterritory"] =
+                Clone(
+                    memberObject["ng_servterritory"]),
+
+            ["ng_sfcommodity"] =
+                Clone(
+                    memberObject["ng_sfcommodity"]),
+
+            ["targstartdate"] =
+                Clone(
+                    memberObject["targstartdate"]),
+
+            ["sneconstraint"] =
+                Clone(
+                    memberObject["sneconstraint"]),
+
+            ["targcompdate"] =
+                Clone(
+                    memberObject["targcompdate"]),
+
+            ["fnlconstraint"] =
+                Clone(
+                    memberObject["fnlconstraint"]),
+
+            ["wosequence"] =
+                Clone(
+                    memberObject["wosequence"]),
+
+            ["estdur"] =
+                Clone(
+                    memberObject["estdur"]),
+
+            ["ng_nrstxstrt"] =
+                Clone(
+                    memberObject["ng_nrstxstrt"]),
+
+            ["ng_sfordertype"] =
+                Clone(
+                    memberObject["ng_sfordertype"]),
+
+            ["wonum"] =
+                Clone(
+                    memberObject["wonum"]),
+
+            ["workorderid"] =
+                Clone(
+                    memberObject["workorderid"]),
+
+            ["ng_lob"] =
+                "Gas",
+
+            ["pmnum"] =
+                Clone(
+                    memberObject["pmnum"]),
+
+            ["status"] =
+                MapStatus(
+                    memberObject["status"]),
+
+            ["vendor"] =
+                Clone(
+                    memberObject["vendor"]),
+
+            ["orgid"] =
+                Clone(
+                    memberObject["orgid"]),
+
+            ["siteid"] =
+                Clone(
+                    memberObject["siteid"]),
+
+            ["parentwonum"] =
+                Clone(
+                    memberObject["parentwonum"]),
+
+            ["worktype"] =
+                Clone(
+                    memberObject["worktype"]),
+
+            ["assetnum"] =
+                Clone(
+                    memberObject["assetnum"]),
+
+            ["ng_sapwonum"] =
+                Clone(
+                    memberObject["ng_sapwonum"]),
+
+            ["locationnum"] =
+                Clone(
+                    memberObject["locationnum"]),
+
+            ["location_description"] =
+                Clone(
+                    memberObject["location_description"]),
+
+            ["locations"] =
+                Clone(
+                    memberObject["locations"])
+        };
+    }
+
+    private static JsonNode? MapStatus(
+        JsonNode? statusNode)
+    {
+        if (statusNode is null)
+        {
+            return null;
+        }
+
+        string? status =
+            statusNode.GetValue<string?>();
+
+        if (status is not null &&
+            StatusMap.TryGetValue(
+                status,
+                out string? mappedStatus))
+        {
+            return JsonValue.Create(
+                mappedStatus);
+        }
+
+        return statusNode.DeepClone();
+    }
+
+    private static JsonNode? Clone(
+        JsonNode? node)
+    {
+        return node?.DeepClone();
+    }
+}
