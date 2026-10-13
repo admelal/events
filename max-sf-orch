@@ -1,0 +1,423 @@
+using System.Text.RegularExpressions;
+
+using GaValveInspectionsSalesforce.Models;
+
+using Microsoft.Azure.Functions.Worker;
+
+using Microsoft.DurableTask;
+
+using Microsoft.Extensions.Logging;
+
+namespace GaValveInspectionsSalesforce.Functions;
+
+public class MaximoToSalesforceWorkOrderOrchestrator
+
+{
+
+    private const string GetSalesforceTokenActivityName = "GetSalesforceToken";
+
+    private const string SendWorkOrdersToSalesforceActivityName = "SendWorkOrdersToSalesforce";
+
+    private const string PublishToSharedRetryTopicActivityName = "PublishWorkOrderToSharedRetryTopic";
+
+    [Function("MaximoToSalesforceWorkOrderOrchestrator")]
+
+    public async Task<SalesforceSendResult> Run(
+
+        [OrchestrationTrigger] TaskOrchestrationContext context)
+
+    {
+
+        ILogger logger =
+
+            context.CreateReplaySafeLogger<MaximoToSalesforceWorkOrderOrchestrator>();
+
+        WorkOrderOrchestrationInput input =
+
+            context.GetInput<WorkOrderOrchestrationInput>()
+
+            ?? throw new InvalidOperationException("Orchestration input is required.");
+
+        if (string.IsNullOrWhiteSpace(input.Payload))
+
+        {
+
+            throw new InvalidOperationException("Payload cannot be empty.");
+
+        }
+
+        string correlationId = string.IsNullOrWhiteSpace(input.CorrelationId)
+
+            ? context.InstanceId
+
+            : input.CorrelationId.Trim();
+
+        HashSet<int> retryableStatusCodes =
+
+            input.RetryStatusCodes.ToHashSet();
+
+        RetryPolicy retryPolicy = new(
+
+            maxNumberOfAttempts: input.RetryCount,
+
+            firstRetryInterval: TimeSpan.FromSeconds(input.RetryDelaySeconds),
+
+            backoffCoefficient: input.BackoffCoefficient,
+
+            maxRetryInterval: TimeSpan.FromSeconds(input.MaxRetryDelaySeconds),
+
+            retryTimeout: TimeSpan.FromMinutes(input.RetryTimeoutMinutes));
+
+        logger.LogInformation(
+
+            "Starting MaximoToSalesforceWorkOrderOrchestrator. CorrelationId: {CorrelationId}, InstanceId: {InstanceId}, PayloadLength: {PayloadLength}, RetryCount: {RetryCount}, RetryStatusCodes: {RetryStatusCodes}",
+
+            correlationId,
+
+            context.InstanceId,
+
+            input.Payload.Length,
+
+            input.RetryCount,
+
+            string.Join(",", retryableStatusCodes));
+
+        string accessToken = await context.CallActivityAsync<string>(
+
+            GetSalesforceTokenActivityName,
+
+            correlationId);
+
+        SalesforceSendRequest request = new()
+
+        {
+
+            AccessToken = accessToken,
+
+            Payload = input.Payload,
+
+            CorrelationId = correlationId
+
+        };
+
+        try
+
+        {
+
+            SalesforceSendResult result =
+
+                await ExecuteActivityWithRetryLoggingAsync<SalesforceSendResult>(
+
+                    context,
+
+                    logger,
+
+                    SendWorkOrdersToSalesforceActivityName,
+
+                    request,
+
+                    retryPolicy,
+
+                    retryableStatusCodes,
+
+                    correlationId);
+
+            logger.LogInformation(
+
+                "Completed Maximo to Salesforce work order orchestration. CorrelationId: {CorrelationId}, StatusCode: {StatusCode}, Success: {Success}",
+
+                correlationId,
+
+                result.StatusCode,
+
+                result.Success);
+
+            return result;
+
+        }
+
+        catch (Exception ex)
+
+        {
+
+            int? statusCode = GetHttpStatusCode(ex);
+
+            bool retryableFailure =
+
+                statusCode.HasValue &&
+
+                retryableStatusCodes.Contains(statusCode.Value);
+
+            if (!retryableFailure)
+
+            {
+
+                logger.LogError(
+
+                    ex,
+
+                    "Maximo to Salesforce work order failed with non-retryable error. Message will not be published to shared retry topic. StatusCode: {StatusCode}, CorrelationId: {CorrelationId}",
+
+                    statusCode,
+
+                    correlationId);
+
+                throw;
+
+            }
+
+            logger.LogError(
+
+                ex,
+
+                "Maximo to Salesforce work order failed after retry handling. Publishing to shared retry topic. StatusCode: {StatusCode}, CorrelationId: {CorrelationId}",
+
+                statusCode,
+
+                correlationId);
+
+            await context.CallActivityAsync(
+
+                PublishToSharedRetryTopicActivityName,
+
+                request);
+
+            logger.LogWarning(
+
+                "Maximo to Salesforce work order published to shared retry topic. CorrelationId: {CorrelationId}",
+
+                correlationId);
+
+            throw;
+
+        }
+
+    }
+
+    private static async Task<TResult> ExecuteActivityWithRetryLoggingAsync<TResult>(
+
+        TaskOrchestrationContext context,
+
+        ILogger logger,
+
+        string activityName,
+
+        object input,
+
+        RetryPolicy retryPolicy,
+
+        HashSet<int> retryableStatusCodes,
+
+        string correlationId)
+
+    {
+
+        Exception? lastException = null;
+
+        for (int attempt = 1; attempt <= retryPolicy.MaxNumberOfAttempts; attempt++)
+
+        {
+
+            try
+
+            {
+
+                logger.LogInformation(
+
+                    "Executing activity. ActivityName: {ActivityName}, Attempt: {Attempt}, MaxAttempts: {MaxAttempts}, CorrelationId: {CorrelationId}",
+
+                    activityName,
+
+                    attempt,
+
+                    retryPolicy.MaxNumberOfAttempts,
+
+                    correlationId);
+
+                TResult result =
+
+                    await context.CallActivityAsync<TResult>(activityName, input);
+
+                logger.LogInformation(
+
+                    "Activity completed successfully. ActivityName: {ActivityName}, Attempt: {Attempt}, CorrelationId: {CorrelationId}",
+
+                    activityName,
+
+                    attempt,
+
+                    correlationId);
+
+                return result;
+
+            }
+
+            catch (Exception ex)
+
+            {
+
+                lastException = ex;
+
+                int? statusCode = GetHttpStatusCode(ex);
+
+                bool retryable =
+
+                    statusCode.HasValue &&
+
+                    retryableStatusCodes.Contains(statusCode.Value);
+
+                logger.LogWarning(
+
+                    ex,
+
+                    "Activity failed. ActivityName: {ActivityName}, Attempt: {Attempt}, MaxAttempts: {MaxAttempts}, StatusCode: {StatusCode}, Retryable: {Retryable}, CorrelationId: {CorrelationId}",
+
+                    activityName,
+
+                    attempt,
+
+                    retryPolicy.MaxNumberOfAttempts,
+
+                    statusCode,
+
+                    retryable,
+
+                    correlationId);
+
+                if (!retryable)
+
+                {
+
+                    throw;
+
+                }
+
+                if (attempt >= retryPolicy.MaxNumberOfAttempts)
+
+                {
+
+                    break;
+
+                }
+
+                TimeSpan retryDelay =
+
+                    CalculateRetryDelay(retryPolicy, attempt);
+
+                await context.CreateTimer(
+
+                    context.CurrentUtcDateTime.Add(retryDelay),
+
+                    CancellationToken.None);
+
+            }
+
+        }
+
+        throw new InvalidOperationException(
+
+            $"Retry exhausted for activity '{activityName}'. CorrelationId: {correlationId}",
+
+            lastException);
+
+    }
+
+    private static int? GetHttpStatusCode(Exception exception)
+
+    {
+
+        if (exception is HttpRequestException httpRequestException &&
+
+            httpRequestException.StatusCode.HasValue)
+
+        {
+
+            return (int)httpRequestException.StatusCode.Value;
+
+        }
+
+        if (exception.InnerException is not null)
+
+        {
+
+            int? innerStatusCode = GetHttpStatusCode(exception.InnerException);
+
+            if (innerStatusCode.HasValue)
+
+            {
+
+                return innerStatusCode;
+
+            }
+
+        }
+
+        string exceptionText = exception.ToString();
+
+        Match match = Regex.Match(
+
+            exceptionText,
+
+            @"Response status code does not indicate success:\s*(\d{3})");
+
+        if (match.Success &&
+
+            int.TryParse(match.Groups[1].Value, out int statusCode))
+
+        {
+
+            return statusCode;
+
+        }
+
+        match = Regex.Match(
+
+            exceptionText,
+
+            @"StatusCode:\s*(\d{3})");
+
+        return match.Success &&
+
+               int.TryParse(match.Groups[1].Value, out statusCode)
+
+            ? statusCode
+
+            : null;
+
+    }
+
+    private static TimeSpan CalculateRetryDelay(
+
+        RetryPolicy retryPolicy,
+
+        int failedAttempt)
+
+    {
+
+        double backoffCoefficient =
+
+            retryPolicy.BackoffCoefficient <= 0
+
+                ? 1
+
+                : retryPolicy.BackoffCoefficient;
+
+        double delaySeconds =
+
+            retryPolicy.FirstRetryInterval.TotalSeconds *
+
+            Math.Pow(backoffCoefficient, failedAttempt - 1);
+
+        TimeSpan calculatedDelay =
+
+            TimeSpan.FromSeconds(delaySeconds);
+
+        return calculatedDelay > retryPolicy.MaxRetryInterval
+
+            ? retryPolicy.MaxRetryInterval
+
+            : calculatedDelay;
+
+    }
+
+}
