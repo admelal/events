@@ -1,423 +1,458 @@
+
+using System.Globalization;
+using System.Net;
 using System.Text.RegularExpressions;
-
 using GaValveInspectionsSalesforce.Models;
-
 using Microsoft.Azure.Functions.Worker;
-
 using Microsoft.DurableTask;
-
 using Microsoft.Extensions.Logging;
 
 namespace GaValveInspectionsSalesforce.Functions;
 
-public class MaximoToSalesforceWorkOrderOrchestrator
-
+public sealed class MaximoToSalesforceWorkOrderOrchestrator
 {
+    private const string GetSalesforceTokenActivityName =
+        "GetSalesforceToken";
 
-    private const string GetSalesforceTokenActivityName = "GetSalesforceToken";
+    private const string SendWorkOrdersToSalesforceActivityName =
+        "SendWorkOrdersToSalesforce";
 
-    private const string SendWorkOrdersToSalesforceActivityName = "SendWorkOrdersToSalesforce";
+    private const string PublishToSharedRetryTopicActivityName =
+        "PublishWorkOrderToSharedRetryTopic";
 
-    private const string PublishToSharedRetryTopicActivityName = "PublishWorkOrderToSharedRetryTopic";
+    private static readonly Regex StatusCodeRegex = new(
+        @"(?:StatusCode:\s*|Response status code does not indicate success:\s*)(\d{3})",
+        RegexOptions.Compiled |
+        RegexOptions.CultureInvariant |
+        RegexOptions.IgnoreCase);
 
     [Function("MaximoToSalesforceWorkOrderOrchestrator")]
-
     public async Task<SalesforceSendResult> Run(
-
         [OrchestrationTrigger] TaskOrchestrationContext context)
-
     {
+        ArgumentNullException.ThrowIfNull(context);
 
         ILogger logger =
-
-            context.CreateReplaySafeLogger<MaximoToSalesforceWorkOrderOrchestrator>();
+            context.CreateReplaySafeLogger<
+                MaximoToSalesforceWorkOrderOrchestrator>();
 
         WorkOrderOrchestrationInput input =
-
             context.GetInput<WorkOrderOrchestrationInput>()
-
-            ?? throw new InvalidOperationException("Orchestration input is required.");
+            ?? throw new InvalidOperationException(
+                "Orchestration input is required.");
 
         if (string.IsNullOrWhiteSpace(input.Payload))
-
         {
-
-            throw new InvalidOperationException("Payload cannot be empty.");
-
+            throw new InvalidOperationException(
+                "Maximo work order payload is required.");
         }
 
-        string correlationId = string.IsNullOrWhiteSpace(input.CorrelationId)
+        string correlationId =
+            string.IsNullOrWhiteSpace(input.CorrelationId)
+                ? context.InstanceId
+                : input.CorrelationId.Trim();
 
-            ? context.InstanceId
-
-            : input.CorrelationId.Trim();
+        ValidateRetryConfiguration(input);
 
         HashSet<int> retryableStatusCodes =
-
-            input.RetryStatusCodes.ToHashSet();
+            input.RetryStatusCodes?.ToHashSet()
+            ?? new HashSet<int>();
 
         RetryPolicy retryPolicy = new(
-
             maxNumberOfAttempts: input.RetryCount,
-
-            firstRetryInterval: TimeSpan.FromSeconds(input.RetryDelaySeconds),
-
+            firstRetryInterval:
+                TimeSpan.FromSeconds(input.RetryDelaySeconds),
             backoffCoefficient: input.BackoffCoefficient,
-
-            maxRetryInterval: TimeSpan.FromSeconds(input.MaxRetryDelaySeconds),
-
-            retryTimeout: TimeSpan.FromMinutes(input.RetryTimeoutMinutes));
+            maxRetryInterval:
+                TimeSpan.FromSeconds(input.MaxRetryDelaySeconds),
+            retryTimeout:
+                TimeSpan.FromMinutes(input.RetryTimeoutMinutes));
 
         logger.LogInformation(
-
-            "Starting MaximoToSalesforceWorkOrderOrchestrator. CorrelationId: {CorrelationId}, InstanceId: {InstanceId}, PayloadLength: {PayloadLength}, RetryCount: {RetryCount}, RetryStatusCodes: {RetryStatusCodes}",
-
+            "Starting Maximo to Salesforce orchestration. " +
+            "CorrelationId: {CorrelationId}, " +
+            "InstanceId: {InstanceId}, " +
+            "MaxAttempts: {MaxAttempts}",
             correlationId,
-
             context.InstanceId,
+            retryPolicy.MaxNumberOfAttempts);
 
-            input.Payload.Length,
+        string accessToken =
+            await context.CallActivityAsync<string>(
+                GetSalesforceTokenActivityName,
+                correlationId);
 
-            input.RetryCount,
-
-            string.Join(",", retryableStatusCodes));
-
-        string accessToken = await context.CallActivityAsync<string>(
-
-            GetSalesforceTokenActivityName,
-
-            correlationId);
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            throw new InvalidOperationException(
+                "Salesforce token activity returned an empty token.");
+        }
 
         SalesforceSendRequest request = new()
-
         {
-
             AccessToken = accessToken,
-
             Payload = input.Payload,
-
             CorrelationId = correlationId
-
         };
 
         try
-
         {
-
             SalesforceSendResult result =
-
-                await ExecuteActivityWithRetryLoggingAsync<SalesforceSendResult>(
-
+                await ExecuteWithRetryAsync(
                     context,
-
                     logger,
-
-                    SendWorkOrdersToSalesforceActivityName,
-
                     request,
-
                     retryPolicy,
-
                     retryableStatusCodes,
-
                     correlationId);
 
             logger.LogInformation(
-
-                "Completed Maximo to Salesforce work order orchestration. CorrelationId: {CorrelationId}, StatusCode: {StatusCode}, Success: {Success}",
-
+                "Maximo to Salesforce orchestration completed. " +
+                "CorrelationId: {CorrelationId}, " +
+                "StatusCode: {StatusCode}, " +
+                "Success: {Success}",
                 correlationId,
-
                 result.StatusCode,
-
                 result.Success);
 
             return result;
-
         }
-
         catch (Exception ex)
-
         {
-
             int? statusCode = GetHttpStatusCode(ex);
 
-            bool retryableFailure =
-
-                statusCode.HasValue &&
-
-                retryableStatusCodes.Contains(statusCode.Value);
-
-            if (!retryableFailure)
-
-            {
-
-                logger.LogError(
-
+            bool retryable =
+                IsRetryableFailure(
                     ex,
-
-                    "Maximo to Salesforce work order failed with non-retryable error. Message will not be published to shared retry topic. StatusCode: {StatusCode}, CorrelationId: {CorrelationId}",
-
                     statusCode,
+                    retryableStatusCodes);
 
-                    correlationId);
+            if (!retryable)
+            {
+                logger.LogError(
+                    ex,
+                    "Maximo to Salesforce processing failed " +
+                    "with a non-retryable error. " +
+                    "CorrelationId: {CorrelationId}, " +
+                    "StatusCode: {StatusCode}, " +
+                    "ExceptionType: {ExceptionType}",
+                    correlationId,
+                    statusCode,
+                    ex.GetType().FullName);
 
                 throw;
-
             }
 
             logger.LogError(
-
                 ex,
-
-                "Maximo to Salesforce work order failed after retry handling. Publishing to shared retry topic. StatusCode: {StatusCode}, CorrelationId: {CorrelationId}",
-
-                statusCode,
-
-                correlationId);
+                "Maximo to Salesforce retry attempts exhausted. " +
+                "CorrelationId: {CorrelationId}, " +
+                "StatusCode: {StatusCode}",
+                correlationId,
+                statusCode);
 
             await context.CallActivityAsync(
-
                 PublishToSharedRetryTopicActivityName,
-
                 request);
 
             logger.LogWarning(
-
-                "Maximo to Salesforce work order published to shared retry topic. CorrelationId: {CorrelationId}",
-
+                "Maximo work order published to shared retry topic. " +
+                "CorrelationId: {CorrelationId}",
                 correlationId);
 
             throw;
-
         }
-
     }
 
-    private static async Task<TResult> ExecuteActivityWithRetryLoggingAsync<TResult>(
-
-        TaskOrchestrationContext context,
-
-        ILogger logger,
-
-        string activityName,
-
-        object input,
-
-        RetryPolicy retryPolicy,
-
-        HashSet<int> retryableStatusCodes,
-
-        string correlationId)
-
+    private static async Task<SalesforceSendResult>
+        ExecuteWithRetryAsync(
+            TaskOrchestrationContext context,
+            ILogger logger,
+            SalesforceSendRequest request,
+            RetryPolicy retryPolicy,
+            HashSet<int> retryableStatusCodes,
+            string correlationId)
     {
+        DateTime retryStartedUtc =
+            context.CurrentUtcDateTime;
 
-        Exception? lastException = null;
+        DateTime retryDeadlineUtc =
+            retryStartedUtc.Add(retryPolicy.RetryTimeout);
 
-        for (int attempt = 1; attempt <= retryPolicy.MaxNumberOfAttempts; attempt++)
-
+        for (int attempt = 1;
+             attempt <= retryPolicy.MaxNumberOfAttempts;
+             attempt++)
         {
-
             try
-
             {
-
                 logger.LogInformation(
-
-                    "Executing activity. ActivityName: {ActivityName}, Attempt: {Attempt}, MaxAttempts: {MaxAttempts}, CorrelationId: {CorrelationId}",
-
-                    activityName,
-
+                    "Executing Salesforce work order activity. " +
+                    "Attempt: {Attempt}, " +
+                    "MaxAttempts: {MaxAttempts}, " +
+                    "CorrelationId: {CorrelationId}",
                     attempt,
-
                     retryPolicy.MaxNumberOfAttempts,
-
                     correlationId);
 
-                TResult result =
+                SalesforceSendResult result =
+                    await context.CallActivityAsync<
+                        SalesforceSendResult>(
+                        SendWorkOrdersToSalesforceActivityName,
+                        request);
 
-                    await context.CallActivityAsync<TResult>(activityName, input);
+                if (result is null)
+                {
+                    throw new InvalidOperationException(
+                        "Salesforce activity returned a null result.");
+                }
+
+                if (!result.Success)
+                {
+                    throw new InvalidOperationException(
+                        "Salesforce activity returned an " +
+                        "unsuccessful result without throwing.");
+                }
 
                 logger.LogInformation(
-
-                    "Activity completed successfully. ActivityName: {ActivityName}, Attempt: {Attempt}, CorrelationId: {CorrelationId}",
-
-                    activityName,
-
+                    "Salesforce activity completed successfully. " +
+                    "Attempt: {Attempt}, " +
+                    "StatusCode: {StatusCode}, " +
+                    "CorrelationId: {CorrelationId}",
                     attempt,
-
+                    result.StatusCode,
                     correlationId);
 
                 return result;
-
             }
-
             catch (Exception ex)
-
             {
-
-                lastException = ex;
-
-                int? statusCode = GetHttpStatusCode(ex);
+                int? statusCode =
+                    GetHttpStatusCode(ex);
 
                 bool retryable =
-
-                    statusCode.HasValue &&
-
-                    retryableStatusCodes.Contains(statusCode.Value);
+                    IsRetryableFailure(
+                        ex,
+                        statusCode,
+                        retryableStatusCodes);
 
                 logger.LogWarning(
-
-                    ex,
-
-                    "Activity failed. ActivityName: {ActivityName}, Attempt: {Attempt}, MaxAttempts: {MaxAttempts}, StatusCode: {StatusCode}, Retryable: {Retryable}, CorrelationId: {CorrelationId}",
-
-                    activityName,
-
+                    "Salesforce activity failed. " +
+                    "Attempt: {Attempt}, " +
+                    "MaxAttempts: {MaxAttempts}, " +
+                    "StatusCode: {StatusCode}, " +
+                    "Retryable: {Retryable}, " +
+                    "CorrelationId: {CorrelationId}",
                     attempt,
-
                     retryPolicy.MaxNumberOfAttempts,
-
                     statusCode,
-
                     retryable,
-
                     correlationId);
 
                 if (!retryable)
-
                 {
-
                     throw;
-
                 }
 
                 if (attempt >= retryPolicy.MaxNumberOfAttempts)
-
                 {
-
-                    break;
-
+                    throw;
                 }
 
-                TimeSpan retryDelay =
+                TimeSpan delay =
+                    CalculateRetryDelay(
+                        retryPolicy,
+                        attempt);
 
-                    CalculateRetryDelay(retryPolicy, attempt);
+                DateTime nextAttemptUtc =
+                    context.CurrentUtcDateTime.Add(delay);
+
+                if (nextAttemptUtc >= retryDeadlineUtc)
+                {
+                    logger.LogWarning(
+                        "Salesforce retry timeout reached. " +
+                        "Attempt: {Attempt}, " +
+                        "CorrelationId: {CorrelationId}",
+                        attempt,
+                        correlationId);
+
+                    throw;
+                }
+
+                logger.LogInformation(
+                    "Scheduling Salesforce activity retry. " +
+                    "NextAttempt: {NextAttempt}, " +
+                    "DelaySeconds: {DelaySeconds}, " +
+                    "CorrelationId: {CorrelationId}",
+                    attempt + 1,
+                    delay.TotalSeconds,
+                    correlationId);
 
                 await context.CreateTimer(
-
-                    context.CurrentUtcDateTime.Add(retryDelay),
-
+                    nextAttemptUtc,
                     CancellationToken.None);
-
             }
-
         }
 
         throw new InvalidOperationException(
-
-            $"Retry exhausted for activity '{activityName}'. CorrelationId: {correlationId}",
-
-            lastException);
-
+            "Salesforce retry loop ended unexpectedly.");
     }
 
-    private static int? GetHttpStatusCode(Exception exception)
-
+    private static bool IsRetryableFailure(
+        Exception exception,
+        int? statusCode,
+        HashSet<int> retryableStatusCodes)
     {
-
-        if (exception is HttpRequestException httpRequestException &&
-
-            httpRequestException.StatusCode.HasValue)
-
+        if (statusCode.HasValue)
         {
+            return retryableStatusCodes.Contains(
+                statusCode.Value);
+        }
 
-            return (int)httpRequestException.StatusCode.Value;
+        if (exception is TimeoutException ||
+            exception is TaskCanceledException ||
+            exception is OperationCanceledException)
+        {
+            return true;
+        }
 
+        if (exception is HttpRequestException)
+        {
+            return true;
         }
 
         if (exception.InnerException is not null)
-
         {
-
-            int? innerStatusCode = GetHttpStatusCode(exception.InnerException);
-
-            if (innerStatusCode.HasValue)
-
-            {
-
-                return innerStatusCode;
-
-            }
-
+            return IsRetryableFailure(
+                exception.InnerException,
+                null,
+                retryableStatusCodes);
         }
 
-        string exceptionText = exception.ToString();
+        // Durable Functions can serialize remote activity
+        // exceptions into TaskFailedException.
+        // Only recognize explicit transport failure types.
+        if (exception is TaskFailedException)
+        {
+            string details = exception.ToString();
 
-        Match match = Regex.Match(
+            return details.Contains(
+                       "System.Net.Http.HttpRequestException",
+                       StringComparison.Ordinal) ||
+                   details.Contains(
+                       "System.TimeoutException",
+                       StringComparison.Ordinal) ||
+                   details.Contains(
+                       "System.Net.Sockets.SocketException",
+                       StringComparison.Ordinal) ||
+                   details.Contains(
+                       "System.Threading.Tasks.TaskCanceledException",
+                       StringComparison.Ordinal);
+        }
 
-            exceptionText,
+        return false;
+    }
 
-            @"Response status code does not indicate success:\s*(\d{3})");
+    private static int? GetHttpStatusCode(
+        Exception exception)
+    {
+        if (exception is HttpRequestException httpException &&
+            httpException.StatusCode.HasValue)
+        {
+            return (int)httpException.StatusCode.Value;
+        }
+
+        if (exception.InnerException is not null)
+        {
+            int? innerStatus =
+                GetHttpStatusCode(
+                    exception.InnerException);
+
+            if (innerStatus.HasValue)
+            {
+                return innerStatus;
+            }
+        }
+
+        // Durable activity exceptions may not retain
+        // the original HttpRequestException type.
+        Match match =
+            StatusCodeRegex.Match(
+                exception.ToString());
 
         if (match.Success &&
-
-            int.TryParse(match.Groups[1].Value, out int statusCode))
-
+            int.TryParse(
+                match.Groups[1].Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int statusCode))
         {
-
             return statusCode;
-
         }
 
-        match = Regex.Match(
-
-            exceptionText,
-
-            @"StatusCode:\s*(\d{3})");
-
-        return match.Success &&
-
-               int.TryParse(match.Groups[1].Value, out statusCode)
-
-            ? statusCode
-
-            : null;
-
+        return null;
     }
 
     private static TimeSpan CalculateRetryDelay(
-
         RetryPolicy retryPolicy,
-
         int failedAttempt)
-
     {
-
-        double backoffCoefficient =
-
-            retryPolicy.BackoffCoefficient <= 0
-
-                ? 1
-
-                : retryPolicy.BackoffCoefficient;
-
         double delaySeconds =
-
             retryPolicy.FirstRetryInterval.TotalSeconds *
+            Math.Pow(
+                retryPolicy.BackoffCoefficient,
+                failedAttempt - 1);
 
-            Math.Pow(backoffCoefficient, failedAttempt - 1);
+        double maximumDelaySeconds =
+            retryPolicy.MaxRetryInterval.TotalSeconds;
 
-        TimeSpan calculatedDelay =
+        delaySeconds =
+            Math.Min(
+                delaySeconds,
+                maximumDelaySeconds);
 
-            TimeSpan.FromSeconds(delaySeconds);
-
-        return calculatedDelay > retryPolicy.MaxRetryInterval
-
-            ? retryPolicy.MaxRetryInterval
-
-            : calculatedDelay;
-
+        return TimeSpan.FromSeconds(delaySeconds);
     }
 
+    private static void ValidateRetryConfiguration(
+        WorkOrderOrchestrationInput input)
+    {
+        if (input.RetryCount < 1)
+        {
+            throw new InvalidOperationException(
+                "RetryCount must be greater than zero.");
+        }
+
+        if (input.RetryDelaySeconds < 1)
+        {
+            throw new InvalidOperationException(
+                "RetryDelaySeconds must be greater than zero.");
+        }
+
+        if (double.IsNaN(input.BackoffCoefficient) ||
+            double.IsInfinity(input.BackoffCoefficient) ||
+            input.BackoffCoefficient < 1)
+        {
+            throw new InvalidOperationException(
+                "BackoffCoefficient must be finite " +
+                "and greater than or equal to one.");
+        }
+
+        if (input.MaxRetryDelaySeconds < 1)
+        {
+            throw new InvalidOperationException(
+                "MaxRetryDelaySeconds must be greater than zero.");
+        }
+
+        if (input.RetryTimeoutMinutes < 1)
+        {
+            throw new InvalidOperationException(
+                "RetryTimeoutMinutes must be greater than zero.");
+        }
+
+        if (input.RetryStatusCodes is null)
+        {
+            throw new InvalidOperationException(
+                "RetryStatusCodes configuration is required.");
+        }
+    }
 }
