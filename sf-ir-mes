@@ -1,0 +1,470 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using GaValveInspectionsSalesforce.Models;
+using GaValveInspectionsSalesforce.Transformers;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace GaValveInspectionsSalesforce.Services;
+
+public sealed class SalesforceIrMessageService
+{
+   private static readonly JsonSerializerOptions JsonOptions = new()
+   {
+       PropertyNameCaseInsensitive = true
+   };
+
+   private readonly HttpClient _httpClient;
+   private readonly IConfiguration _configuration;
+   private readonly MaximoToSalesforceService _salesforceService;
+   private readonly ILogger<SalesforceIrMessageService> _logger;
+
+   public SalesforceIrMessageService(
+       HttpClient httpClient,
+       IConfiguration configuration,
+       MaximoToSalesforceService salesforceService,
+       ILogger<SalesforceIrMessageService> logger)
+   {
+       _httpClient = httpClient
+           ?? throw new ArgumentNullException(nameof(httpClient));
+
+       _configuration = configuration
+           ?? throw new ArgumentNullException(nameof(configuration));
+
+       _salesforceService = salesforceService
+           ?? throw new ArgumentNullException(nameof(salesforceService));
+
+       _logger = logger
+           ?? throw new ArgumentNullException(nameof(logger));
+   }
+
+   public async Task<int> ProcessAsync(
+       string correlationId,
+       CancellationToken cancellationToken = default)
+   {
+       correlationId =
+           ResolveCorrelationId(correlationId);
+
+       string accessToken =
+           await _salesforceService.GetSalesforceTokenAsync(
+               correlationId);
+
+       Uri salesforceIrMessagesEndpoint =
+           BuildEndpoint(
+               "SalesforceHost",
+               "SalesforceIrMessagesPath");
+
+       Uri maximoEndpoint =
+           BuildEndpoint(
+               "MaximoHost",
+               "MaximoValvesPath");
+
+       List<SalesforceIrMessage> messages =
+           await GetIrMessagesAsync(
+               salesforceIrMessagesEndpoint,
+               accessToken,
+               correlationId,
+               cancellationToken);
+
+       if (messages.Count == 0)
+       {
+           _logger.LogInformation(
+               "No Salesforce IR messages found. CorrelationId: {CorrelationId}",
+               correlationId);
+
+           return 0;
+       }
+
+       _logger.LogInformation(
+           "Salesforce IR messages retrieved. CorrelationId: {CorrelationId}, RecordCount: {RecordCount}",
+           correlationId,
+           messages.Count);
+
+       List<SalesforceIrMessageUpdate> successfulUpdates = [];
+
+       foreach (SalesforceIrMessage message in messages)
+       {
+           string recordId =
+               GetRequiredRecordId(
+                   message,
+                   correlationId);
+
+           if (message.Request is null)
+           {
+               throw new InvalidOperationException(
+                   $"Salesforce IR message NG_Request__c is missing. " +
+                   $"RecordId: {recordId}. " +
+                   $"CorrelationId: {correlationId}");
+           }
+
+           string salesforcePayload =
+               message.Request.ToJsonString();
+
+           _logger.LogInformation(
+               "SF Request Payload Before Transformation. RecordId: {RecordId}, CorrelationId: {CorrelationId}, Payload: {Payload}",
+               recordId,
+               correlationId,
+               salesforcePayload);
+
+           string transformedPayload =
+               SalesforceToMaximoStatusTransformer.Transform(
+                   salesforcePayload,
+                   correlationId);
+
+           _logger.LogInformation(
+               "MX Request Payload After Transformation. RecordId: {RecordId}, CorrelationId: {CorrelationId}, Payload: {Payload}",
+               recordId,
+               correlationId,
+               transformedPayload);
+
+           await SendToMaximoAsync(
+               maximoEndpoint,
+               transformedPayload,
+               correlationId,
+               recordId,
+               cancellationToken);
+
+           successfulUpdates.Add(
+               new SalesforceIrMessageUpdate
+               {
+                   RecordId = recordId
+               });
+       }
+
+       if (successfulUpdates.Count == 0)
+       {
+           return 0;
+       }
+
+       await UpdateSalesforceIrMessagesAsync(
+           salesforceIrMessagesEndpoint,
+           accessToken,
+           successfulUpdates,
+           correlationId,
+           cancellationToken);
+
+       return successfulUpdates.Count;
+   }
+
+   private async Task<List<SalesforceIrMessage>> GetIrMessagesAsync(
+       Uri endpoint,
+       string accessToken,
+       string correlationId,
+       CancellationToken cancellationToken)
+   {
+       using HttpRequestMessage request =
+           new(HttpMethod.Get, endpoint);
+
+       request.Headers.Authorization =
+           new AuthenticationHeaderValue(
+               "Bearer",
+               accessToken);
+
+       request.Headers.TryAddWithoutValidation(
+           "x-correlation-id",
+           correlationId);
+
+       request.Headers.Accept.Add(
+           new MediaTypeWithQualityHeaderValue(
+               "application/json"));
+
+       _logger.LogInformation(
+           "Getting Salesforce IR messages. CorrelationId: {CorrelationId}, Endpoint: {Endpoint}",
+           correlationId,
+           endpoint);
+
+       using HttpResponseMessage response =
+           await _httpClient.SendAsync(
+               request,
+               cancellationToken);
+
+       string responseBody =
+           await response.Content.ReadAsStringAsync(
+               cancellationToken);
+
+       if (!response.IsSuccessStatusCode)
+       {
+           _logger.LogError(
+               "Salesforce IRMessages GET failed. CorrelationId: {CorrelationId}, StatusCode: {StatusCode}, ResponseBody: {ResponseBody}",
+               correlationId,
+               (int)response.StatusCode,
+               string.IsNullOrWhiteSpace(responseBody)
+                   ? "<EMPTY>"
+                   : responseBody);
+
+           throw new HttpRequestException(
+               $"Salesforce IRMessages GET failed. " +
+               $"StatusCode: {(int)response.StatusCode}. " +
+               $"CorrelationId: {correlationId}",
+               null,
+               response.StatusCode);
+       }
+
+       if (string.IsNullOrWhiteSpace(responseBody))
+       {
+           return [];
+       }
+
+       try
+       {
+           return JsonSerializer.Deserialize<List<SalesforceIrMessage>>(
+                      responseBody,
+                      JsonOptions)
+                  ?? [];
+       }
+       catch (JsonException ex)
+       {
+           throw new InvalidOperationException(
+               $"Salesforce IRMessages GET response is not valid JSON. " +
+               $"CorrelationId: {correlationId}",
+               ex);
+       }
+   }
+
+   private async Task SendToMaximoAsync(
+       Uri endpoint,
+       string payload,
+       string correlationId,
+       string recordId,
+       CancellationToken cancellationToken)
+   {
+       string maximoBasicAuth =
+           GetRequiredBasicAuth(
+               "MaximoBasicAuth");
+
+       using HttpRequestMessage request =
+           new(HttpMethod.Post, endpoint);
+
+       request.Headers.Authorization =
+           new AuthenticationHeaderValue(
+               "Basic",
+               maximoBasicAuth);
+
+       request.Headers.TryAddWithoutValidation(
+           "x-correlation-id",
+           correlationId);
+
+       request.Headers.Accept.Add(
+           new MediaTypeWithQualityHeaderValue(
+               "application/json"));
+
+       request.Content =
+           new StringContent(
+               payload,
+               Encoding.UTF8,
+               "application/json");
+
+       _logger.LogInformation(
+           "Posting transformed Salesforce IR message to Maximo. RecordId: {RecordId}, CorrelationId: {CorrelationId}, Endpoint: {Endpoint}",
+           recordId,
+           correlationId,
+           endpoint);
+
+       using HttpResponseMessage response =
+           await _httpClient.SendAsync(
+               request,
+               cancellationToken);
+
+       string responseBody =
+           await response.Content.ReadAsStringAsync(
+               cancellationToken);
+
+       if (!response.IsSuccessStatusCode)
+       {
+           _logger.LogError(
+               "Maximo IR message request failed. RecordId: {RecordId}, CorrelationId: {CorrelationId}, StatusCode: {StatusCode}, ResponseBody: {ResponseBody}",
+               recordId,
+               correlationId,
+               (int)response.StatusCode,
+               string.IsNullOrWhiteSpace(responseBody)
+                   ? "<EMPTY>"
+                   : responseBody);
+
+           throw new HttpRequestException(
+               $"Maximo IR message request failed. " +
+               $"StatusCode: {(int)response.StatusCode}. " +
+               $"RecordId: {recordId}. " +
+               $"CorrelationId: {correlationId}",
+               null,
+               response.StatusCode);
+       }
+
+       _logger.LogInformation(
+           "Salesforce IR message successfully sent to Maximo. RecordId: {RecordId}, CorrelationId: {CorrelationId}, StatusCode: {StatusCode}",
+           recordId,
+           correlationId,
+           (int)response.StatusCode);
+   }
+
+   private async Task UpdateSalesforceIrMessagesAsync(
+       Uri endpoint,
+       string accessToken,
+       IReadOnlyCollection<SalesforceIrMessageUpdate> updates,
+       string correlationId,
+       CancellationToken cancellationToken)
+   {
+
+       string patchPayload =
+           JsonSerializer.Serialize(
+               updates,
+               JsonOptions);
+
+       _logger.LogInformation(
+           "Salesforce IRMessages PATCH Request. CorrelationId: {CorrelationId}, RecordCount: {RecordCount}, Payload: {Payload}",
+           correlationId,
+           updates.Count,
+           patchPayload);
+
+       using HttpRequestMessage request =
+           new(HttpMethod.Patch, endpoint);
+
+       request.Headers.Authorization =
+           new AuthenticationHeaderValue(
+               "Bearer",
+               accessToken);
+
+       request.Headers.TryAddWithoutValidation(
+           "x-correlation-id",
+           correlationId);
+
+       request.Headers.Accept.Add(
+           new MediaTypeWithQualityHeaderValue(
+               "application/json"));
+
+       request.Content =
+           new StringContent(
+               patchPayload,
+               Encoding.UTF8,
+               "application/json");
+
+       using HttpResponseMessage response =
+           await _httpClient.SendAsync(
+               request,
+               cancellationToken);
+
+       string responseBody =
+           await response.Content.ReadAsStringAsync(
+               cancellationToken);
+
+       if (!response.IsSuccessStatusCode)
+       {
+           _logger.LogError(
+               "Salesforce IRMessages PATCH failed. CorrelationId: {CorrelationId}, StatusCode: {StatusCode}, ResponseBody: {ResponseBody}",
+               correlationId,
+               (int)response.StatusCode,
+               string.IsNullOrWhiteSpace(responseBody)
+                   ? "<EMPTY>"
+                   : responseBody);
+
+           throw new HttpRequestException(
+               $"Salesforce IRMessages PATCH failed. " +
+               $"StatusCode: {(int)response.StatusCode}. " +
+               $"CorrelationId: {correlationId}",
+               null,
+               response.StatusCode);
+       }
+
+       _logger.LogInformation(
+           "Salesforce IRMessages PATCH completed successfully. CorrelationId: {CorrelationId}, RecordCount: {RecordCount}, StatusCode: {StatusCode}",
+           correlationId,
+           updates.Count,
+           (int)response.StatusCode);
+   }
+
+   private static string GetRequiredRecordId(
+       SalesforceIrMessage message,
+       string correlationId)
+   {
+       if (string.IsNullOrWhiteSpace(message.Id))
+       {
+           throw new InvalidOperationException(
+               $"Salesforce IR message Id is missing or empty. " +
+               $"CorrelationId: {correlationId}");
+       }
+
+       return message.Id.Trim();
+   }
+
+   private Uri BuildEndpoint(
+       string hostKey,
+       string pathKey)
+   {
+       string host =
+           GetRequiredConfig(hostKey);
+
+       string path =
+           GetRequiredConfig(pathKey);
+
+       string endpoint =
+           $"{host.TrimEnd('/')}/{path.TrimStart('/')}";
+
+       if (!Uri.TryCreate(
+               endpoint,
+               UriKind.Absolute,
+               out Uri? uri))
+       {
+           throw new InvalidOperationException(
+               $"Unable to build valid endpoint using " +
+               $"'{hostKey}' and '{pathKey}'.");
+       }
+
+       if (!string.Equals(
+               uri.Scheme,
+               Uri.UriSchemeHttps,
+               StringComparison.OrdinalIgnoreCase))
+       {
+           throw new InvalidOperationException(
+               $"Endpoint configured by '{hostKey}' and " +
+               $"'{pathKey}' must use HTTPS.");
+       }
+
+       return uri;
+   }
+
+   private string GetRequiredBasicAuth(
+       string key)
+   {
+       string value =
+           GetRequiredConfig(key);
+
+       if (value.StartsWith(
+               "Basic ",
+               StringComparison.OrdinalIgnoreCase))
+       {
+           value =
+               value["Basic ".Length..].Trim();
+       }
+
+       if (string.IsNullOrWhiteSpace(value))
+       {
+           throw new InvalidOperationException(
+               $"Configuration value '{key}' is empty.");
+       }
+
+       return value;
+   }
+
+   private string GetRequiredConfig(
+       string key)
+   {
+       string? value =
+           _configuration[key];
+
+       if (string.IsNullOrWhiteSpace(value))
+       {
+           throw new InvalidOperationException(
+               $"Missing required configuration value: {key}");
+       }
+
+       return value.Trim();
+   }
+
+   private static string ResolveCorrelationId(
+       string? correlationId)
+   {
+       return string.IsNullOrWhiteSpace(correlationId)
+           ? Guid.NewGuid().ToString("N")
+           : correlationId.Trim();
+   }
+}
