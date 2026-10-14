@@ -1,0 +1,147 @@
+namespace GaValveInspectionsSalesforce.Transformers;
+
+public static class SalesforceToMaximoMappings
+
+{
+    public static readonly IReadOnlyDictionary<string, string> StatusMap =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+
+        {
+
+            ["New"] = "WSCH",
+            ["Scheduled"] = "SCHED",
+            ["Dispatched"] = "DISP",
+            ["En_Route"] = "ENROUTE",
+            ["On_Site"] = "INPRG",
+            ["On_Hold"] = "HOLD",
+            ["Work_Order_Complete"] = "FLDCOMP",
+            ["Closed"] = "CLOSE",
+            ["Canceled"] = "CAN",
+            ["Supervisor_Complete"] = "SPVCOMP"
+        };
+
+    public static readonly IReadOnlySet<string> ScheduledStatuses =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+
+        {
+
+            "Scheduled",
+            "Dispatched",
+            "En_Route",
+            "On_Site",
+            "On_Hold"
+        };
+
+    /*
+
+     * Output field → exact input field.
+
+     * No fallback source fields are used.
+
+     */
+
+    public static readonly IReadOnlyDictionary<string, string> CommonFieldMap =
+
+        new Dictionary<string, string>(StringComparer.Ordinal)
+
+        {
+            ["workorderid"] = "workorderid",
+            ["ng_sfwonum"] = "ng_sfwonum",
+            ["ng_sfrefid"] = "wosfdcid",
+            ["wonum"] = "ng_mxwonum",
+            ["orgid"] = "orgid",
+            ["siteid"] = "siteid",
+            ["ng_statusdate"] = "ng_statusdate",
+            ["ng_sfstatusseqnum"] = "ng_sfstatusseqnum"
+        };
+
+    public static readonly IReadOnlyDictionary<string, string> ScheduledFieldMap =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+
+            ["schedstart"] = "schedstart",
+            ["schedfinish"] = "schedfinish",
+            ["lead"] = "lead",
+            ["ng_woreasoncode"] = "ng_woreasoncode"
+        };
+
+    public static readonly IReadOnlyDictionary<string, string> NewFieldMap =
+
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ng_requestid"] = "ng_requestid",
+            ["ng_requesttype"] = "ng_requesttype",
+            ["ng_source"] = "ng_source",
+            ["ng_statusdate"] = "ng_statusdate",
+            ["ng_sfwonum"] = "sfwonum",
+            ["ng_sfrefid"] = "wosfdcid",
+            ["orgid"] = "orgid",
+            ["siteid"] = "siteid",
+            ["parent"] = "parent"
+        };
+
+    public static readonly IReadOnlyDictionary<string, string> CompletedFieldMap =
+
+        new Dictionary<string, string>(StringComparer.Ordinal)
+
+        {
+
+            ["actstart"] = "start_dtt",
+
+            ["actfinish"] = "end_dttm",
+
+            ["ng_sfrefid"] = "wosfdcid",
+
+            ["ng_sfstatusseqnum"] = "ng_sfstatusseqnum",
+
+            ["ng_woreasoncode"] = "ng_woreasoncode",
+
+            ["ng_sfwonum"] = "sfwonum",
+
+            ["ng_sourcewoid"] = "ng_sourcewoid",
+
+            ["ng_statusdate"] = "ng_statusdate",
+
+            ["siteid"] = "siteid",
+
+            ["orgid"] = "orgid",
+
+            ["wonum"] = "wonum",
+
+            ["workorderid"] = "workorderid"
+
+        };
+
+    public static readonly IReadOnlyDictionary<string, string> StandardFieldMap =
+
+        new Dictionary<string, string>(StringComparer.Ordinal)
+
+        {
+
+            ["lead"] = "lead",
+            ["ng_woreasoncode"] = "ng_woreasoncode"
+
+        };
+
+    public static readonly IReadOnlyDictionary<string, string> WorkLogFieldMap =
+
+        new Dictionary<string, string>(StringComparer.Ordinal)
+
+        {
+
+            ["createby"] = "createby",
+            ["description"] = "description",
+            ["description_longdescription"] = "description_longdescription",
+            ["logtype"] = "logtype"
+
+        };
+    public static readonly IReadOnlyList<string> WorkOrderSpecAttributes =
+        new[]
+        {
+            "ng_bnchmk1",
+            "ng_bnchmk2",
+            "ng_bnchmk3",
+            "ng_bnchmk4"
+        };
+
+}
