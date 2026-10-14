@@ -1,0 +1,774 @@
+using System.Globalization;
+
+using System.Text.Json;
+
+using System.Text.Json.Nodes;
+
+namespace GaValveInspectionsSalesforce.Transformers;
+
+public static class SalesforceToMaximoStatusTransformer
+
+{
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+
+    {
+
+        WriteIndented = false
+
+    };
+
+    public static string Transform(
+
+        string salesforcePayload,
+
+        string correlationId)
+
+    {
+
+        if (string.IsNullOrWhiteSpace(salesforcePayload))
+
+        {
+
+            throw new InvalidOperationException(
+
+                $"Salesforce payload is required. " +
+
+                $"CorrelationId: {correlationId}");
+
+        }
+
+        JsonNode rootNode = ParsePayload(
+
+            salesforcePayload,
+
+            correlationId);
+
+        JsonArray members = ExtractMembers(
+
+            rootNode,
+
+            correlationId);
+
+        if (members.Count == 0)
+
+        {
+
+            throw new InvalidOperationException(
+
+                $"Salesforce payload does not contain any members. " +
+
+                $"CorrelationId: {correlationId}");
+
+        }
+
+        JsonArray transformedMembers = new();
+
+        foreach (JsonNode? memberNode in members)
+
+        {
+
+            if (memberNode is not JsonObject member)
+
+            {
+
+                throw new InvalidOperationException(
+
+                    $"Salesforce member must be a JSON object. " +
+
+                    $"CorrelationId: {correlationId}");
+
+            }
+
+            transformedMembers.Add(
+
+                TransformMember(member, correlationId));
+
+        }
+
+        return transformedMembers.Count == 1
+
+            ? transformedMembers[0]!.ToJsonString(JsonOptions)
+
+            : transformedMembers.ToJsonString(JsonOptions);
+
+    }
+
+    private static JsonObject TransformMember(
+
+        JsonObject source,
+
+        string correlationId)
+
+    {
+
+        string salesforceStatus = GetRequiredString(
+
+            source,
+
+            "status",
+
+            correlationId);
+
+        string maximoStatus = ResolveMaximoStatus(
+
+            salesforceStatus,
+
+            correlationId);
+
+        JsonObject output;
+
+        if (salesforceStatus.Equals(
+
+                "New",
+
+                StringComparison.OrdinalIgnoreCase))
+
+        {
+
+            output = BuildNewStatus(source);
+
+        }
+
+        else if (salesforceStatus.Equals(
+
+                     "Work_Order_Complete",
+
+                     StringComparison.OrdinalIgnoreCase))
+
+        {
+
+            output = BuildWorkOrderCompleteStatus(source);
+
+        }
+
+        else if (
+
+            SalesforceToMaximoMappings.ScheduledStatuses.Contains(
+
+                salesforceStatus))
+
+        {
+
+            output = BuildScheduledStatus(source);
+
+        }
+
+        else
+
+        {
+
+            output = BuildStandardStatus(source);
+
+        }
+
+        output["status"] = maximoStatus;
+
+        return output;
+
+    }
+
+    private static JsonObject BuildNewStatus(JsonObject source)
+
+    {
+
+        JsonObject output = new();
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.NewFieldMap);
+
+        return output;
+
+    }
+
+    private static JsonObject BuildScheduledStatus(
+
+        JsonObject source)
+
+    {
+
+        JsonObject output = new();
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.CommonFieldMap);
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.ScheduledFieldMap);
+
+        return output;
+
+    }
+
+    private static JsonObject BuildStandardStatus(
+
+        JsonObject source)
+
+    {
+
+        JsonObject output = new();
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.CommonFieldMap);
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.StandardFieldMap);
+
+        return output;
+
+    }
+
+    private static JsonObject BuildWorkOrderCompleteStatus(
+
+        JsonObject source)
+
+    {
+
+        JsonObject output = new();
+
+        ApplyMappings(
+
+            output,
+
+            source,
+
+            SalesforceToMaximoMappings.CompletedFieldMap);
+
+        AddCompletedWorkOrderLead(output, source);
+
+        AddWorkOrderSpecifications(output, source);
+
+        AddWorkLogs(output, source);
+
+        return output;
+
+    }
+
+    private static void ApplyMappings(
+
+        JsonObject target,
+
+        JsonObject source,
+
+        IReadOnlyDictionary<string, string> fieldMappings)
+
+    {
+
+        foreach (
+
+            KeyValuePair<string, string> mapping
+
+            in fieldMappings)
+
+        {
+
+            AddValue(
+
+                target,
+
+                mapping.Key,
+
+                source,
+
+                mapping.Value);
+
+        }
+
+    }
+
+    private static void AddCompletedWorkOrderLead(
+
+        JsonObject target,
+
+        JsonObject source)
+
+    {
+
+        /*
+
+         * Based on the provided Work_Order_Complete example,
+
+         * Maximo lead comes from worklog.createby.
+
+         */
+
+        if (source["worklog"] is JsonObject workLog)
+
+        {
+
+            AddValue(
+
+                target,
+
+                "lead",
+
+                workLog,
+
+                "createby");
+
+            return;
+
+        }
+
+        if (source["worklog"] is not JsonArray workLogs)
+
+        {
+
+            return;
+
+        }
+
+        foreach (JsonNode? workLogNode in workLogs)
+
+        {
+
+            if (workLogNode is not JsonObject workLogItem)
+
+            {
+
+                continue;
+
+            }
+
+            string? createBy = GetScalarValue(
+
+                workLogItem["createby"]);
+
+            if (string.IsNullOrWhiteSpace(createBy))
+
+            {
+
+                continue;
+
+            }
+
+            target["lead"] = createBy.Trim();
+
+            return;
+
+        }
+
+    }
+
+    private static void AddWorkOrderSpecifications(
+
+        JsonObject target,
+
+        JsonObject source)
+
+    {
+
+        if (source["ng_workorderspec"] is not JsonObject specification)
+
+        {
+
+            return;
+
+        }
+
+        JsonArray transformedSpecifications = new();
+
+        foreach (
+
+            string attributeName
+
+            in SalesforceToMaximoMappings.WorkOrderSpecAttributes)
+
+        {
+
+            string? attributeValue =
+
+                GetScalarValue(specification[attributeName]);
+
+            if (string.IsNullOrWhiteSpace(attributeValue))
+
+            {
+
+                continue;
+
+            }
+
+            transformedSpecifications.Add(
+
+                new JsonObject
+
+                {
+
+                    ["ng_assetattrid"] = attributeName,
+
+                    ["ng_value"] = attributeValue.Trim()
+
+                });
+
+        }
+
+        if (transformedSpecifications.Count > 0)
+
+        {
+
+            target["ng_workorderspec"] =
+
+                transformedSpecifications;
+
+        }
+
+    }
+
+    private static void AddWorkLogs(
+
+        JsonObject target,
+
+        JsonObject source)
+
+    {
+
+        JsonArray transformedWorkLogs = new();
+
+        if (source["worklog"] is JsonObject workLog)
+
+        {
+
+            AddWorkLogEntry(
+
+                transformedWorkLogs,
+
+                workLog);
+
+        }
+
+        else if (source["worklog"] is JsonArray workLogs)
+
+        {
+
+            foreach (JsonNode? workLogNode in workLogs)
+
+            {
+
+                if (workLogNode is JsonObject workLogItem)
+
+                {
+
+                    AddWorkLogEntry(
+
+                        transformedWorkLogs,
+
+                        workLogItem);
+
+                }
+
+            }
+
+        }
+
+        if (transformedWorkLogs.Count > 0)
+
+        {
+
+            target["worklog"] = transformedWorkLogs;
+
+        }
+
+    }
+
+    private static void AddWorkLogEntry(
+
+        JsonArray target,
+
+        JsonObject source)
+
+    {
+
+        JsonObject transformedWorkLog = new();
+
+        ApplyMappings(
+
+            transformedWorkLog,
+
+            source,
+
+            SalesforceToMaximoMappings.WorkLogFieldMap);
+
+        if (transformedWorkLog.Count > 0)
+
+        {
+
+            target.Add(transformedWorkLog);
+
+        }
+
+    }
+
+    private static void AddValue(
+
+        JsonObject target,
+
+        string targetField,
+
+        JsonObject source,
+
+        string sourceField)
+
+    {
+
+        string? value =
+
+            GetScalarValue(source[sourceField]);
+
+        if (string.IsNullOrWhiteSpace(value))
+
+        {
+
+            return;
+
+        }
+
+        target[targetField] = value.Trim();
+
+    }
+
+    private static string GetRequiredString(
+
+        JsonObject source,
+
+        string fieldName,
+
+        string correlationId)
+
+    {
+
+        string? value =
+
+            GetScalarValue(source[fieldName]);
+
+        if (string.IsNullOrWhiteSpace(value))
+
+        {
+
+            throw new InvalidOperationException(
+
+                $"Required Salesforce field '{fieldName}' " +
+
+                $"is missing or empty. " +
+
+                $"CorrelationId: {correlationId}");
+
+        }
+
+        return value.Trim();
+
+    }
+
+    private static string ResolveMaximoStatus(
+
+        string salesforceStatus,
+
+        string correlationId)
+
+    {
+
+        if (SalesforceToMaximoMappings.StatusMap.TryGetValue(
+
+                salesforceStatus,
+
+                out string? maximoStatus))
+
+        {
+
+            return maximoStatus;
+
+        }
+
+        throw new InvalidOperationException(
+
+            $"Unsupported Salesforce status " +
+
+            $"'{salesforceStatus}'. " +
+
+            $"CorrelationId: {correlationId}");
+
+    }
+
+    private static JsonNode ParsePayload(
+
+        string payload,
+
+        string correlationId)
+
+    {
+
+        try
+
+        {
+
+            return JsonNode.Parse(payload)
+
+                ?? throw new InvalidOperationException(
+
+                    $"Salesforce payload is null after parsing. " +
+
+                    $"CorrelationId: {correlationId}");
+
+        }
+
+        catch (JsonException ex)
+
+        {
+
+            throw new InvalidOperationException(
+
+                $"Salesforce payload is not valid JSON. " +
+
+                $"CorrelationId: {correlationId}",
+
+                ex);
+
+        }
+
+    }
+
+    private static JsonArray ExtractMembers(
+
+        JsonNode rootNode,
+
+        string correlationId)
+
+    {
+
+        if (rootNode is JsonObject rootObject &&
+
+            rootObject["member"] is JsonArray memberArray)
+
+        {
+
+            return memberArray;
+
+        }
+
+        if (rootNode is JsonArray rootArray)
+
+        {
+
+            return rootArray;
+
+        }
+
+        throw new InvalidOperationException(
+
+            $"Salesforce payload must contain a member array " +
+
+            $"or be a JSON array. " +
+
+            $"CorrelationId: {correlationId}");
+
+    }
+
+    private static string? GetScalarValue(JsonNode? node)
+
+    {
+
+        if (node is not JsonValue value)
+
+        {
+
+            return null;
+
+        }
+
+        if (value.TryGetValue<string>(
+
+                out string? stringValue))
+
+        {
+
+            return stringValue;
+
+        }
+
+        if (value.TryGetValue<int>(
+
+                out int intValue))
+
+        {
+
+            return intValue.ToString(
+
+                CultureInfo.InvariantCulture);
+
+        }
+
+        if (value.TryGetValue<long>(
+
+                out long longValue))
+
+        {
+
+            return longValue.ToString(
+
+                CultureInfo.InvariantCulture);
+
+        }
+
+        if (value.TryGetValue<decimal>(
+
+                out decimal decimalValue))
+
+        {
+
+            return decimalValue.ToString(
+
+                CultureInfo.InvariantCulture);
+
+        }
+
+        if (value.TryGetValue<double>(
+
+                out double doubleValue))
+
+        {
+
+            return doubleValue.ToString(
+
+                CultureInfo.InvariantCulture);
+
+        }
+
+        if (value.TryGetValue<bool>(
+
+                out bool boolValue))
+
+        {
+
+            return boolValue.ToString().ToLowerInvariant();
+
+        }
+
+        return null;
+
+    }
+
+}
+ 
