@@ -1,0 +1,104 @@
+using System.Net;
+using GaValveInspectionsSalesforce.Services;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+namespace GaValveInspectionsSalesforce.Functions;
+public sealed class SalesforceIrMessageHttpStart
+{
+   private readonly SalesforceIrMessageService _service;
+   private readonly ILogger<SalesforceIrMessageHttpStart> _logger;
+   public SalesforceIrMessageHttpStart(
+       SalesforceIrMessageService service,
+       ILogger<SalesforceIrMessageHttpStart> logger)
+   {
+       _service = service
+           ?? throw new ArgumentNullException(nameof(service));
+       _logger = logger
+           ?? throw new ArgumentNullException(nameof(logger));
+   }
+   [Function("SalesforceIrMessageHttpStart")]
+   public async Task<HttpResponseData> Run(
+       [HttpTrigger(
+           AuthorizationLevel.Function,
+           "patch",
+           Route = "valve-inspection/ir-messages")]
+       HttpRequestData request,
+       CancellationToken cancellationToken)
+   {
+       ArgumentNullException.ThrowIfNull(request);
+       string correlationId =
+           ResolveCorrelationId(request);
+       try
+       {
+           _logger.LogInformation(
+               "Salesforce IR message synchronous processing started. CorrelationId: {CorrelationId}",
+               correlationId);
+           int processedCount =
+               await _service.ProcessAsync(
+                   correlationId,
+                   cancellationToken);
+           HttpResponseData response =
+               request.CreateResponse(HttpStatusCode.OK);
+           response.Headers.Add(
+               "x-correlation-id",
+               correlationId);
+           await response.WriteAsJsonAsync(
+               new
+               {
+                   status = "Success",
+                   message =
+                       "Salesforce IR messages processed successfully.",
+                   processedCount,
+                   correlationId,
+                   timestamp =
+                       DateTime.UtcNow.ToString(
+                           "yyyy-MM-ddTHH:mm:ssZ")
+               },
+               cancellationToken);
+           return response;
+       }
+       catch (Exception ex)
+       {
+           _logger.LogError(
+               ex,
+               "Salesforce IR message synchronous processing failed. CorrelationId: {CorrelationId}",
+               correlationId);
+           HttpResponseData response =
+               request.CreateResponse(
+                   HttpStatusCode.InternalServerError);
+           response.Headers.Add(
+               "x-correlation-id",
+               correlationId);
+           await response.WriteAsJsonAsync(
+               new
+               {
+                   status = "Failed",
+                   message =
+                       "Salesforce IR message processing failed.",
+                   correlationId,
+                   timestamp =
+                       DateTime.UtcNow.ToString(
+                           "yyyy-MM-ddTHH:mm:ssZ")
+               },
+               cancellationToken);
+           return response;
+       }
+   }
+   private static string ResolveCorrelationId(
+       HttpRequestData request)
+   {
+       if (request.Headers.TryGetValues(
+               "x-correlation-id",
+               out IEnumerable<string>? values))
+       {
+           string? correlationId =
+               values.FirstOrDefault();
+           if (!string.IsNullOrWhiteSpace(correlationId))
+           {
+               return correlationId.Trim();
+           }
+       }
+       return Guid.NewGuid().ToString("N");
+   }
+}
