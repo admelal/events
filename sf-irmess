@@ -1,4 +1,3 @@
-
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
@@ -12,430 +11,244 @@ namespace GaValveInspectionsSalesforce.Services;
 
 public sealed class SalesforceIrMessageService
 {
-    private const string NewRequestType = "new";
-    private const string RetryRequestType = "retry";
-    private const string SuccessStatus = "Success";
-    private const string FailedStatus = "Failed";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly MaximoToSalesforceService _salesforceService;
     private readonly IntegrationPayloadLogger _payloadLogger;
     private readonly ILogger<SalesforceIrMessageService> _logger;
 
-    public SalesforceIrMessageService(
-        HttpClient httpClient,
-        IConfiguration configuration,
-        MaximoToSalesforceService salesforceService,
-        IntegrationPayloadLogger payloadLogger,
+    public SalesforceIrMessageService(HttpClient httpClient, IConfiguration configuration,
+        MaximoToSalesforceService salesforceService, IntegrationPayloadLogger payloadLogger,
         ILogger<SalesforceIrMessageService> logger)
     {
-        _httpClient = httpClient
-            ?? throw new ArgumentNullException(nameof(httpClient));
-        _configuration = configuration
-            ?? throw new ArgumentNullException(nameof(configuration));
-        _salesforceService = salesforceService
-            ?? throw new ArgumentNullException(nameof(salesforceService));
-        _payloadLogger = payloadLogger
-            ?? throw new ArgumentNullException(nameof(payloadLogger));
-        _logger = logger
-            ?? throw new ArgumentNullException(nameof(logger));
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _salesforceService = salesforceService ?? throw new ArgumentNullException(nameof(salesforceService));
+        _payloadLogger = payloadLogger ?? throw new ArgumentNullException(nameof(payloadLogger));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task<int> ProcessAsync(
-        string correlationId,
-        CancellationToken cancellationToken = default)
-    {
-        return ProcessAsync(
-            NewRequestType,
-            correlationId,
-            cancellationToken);
-    }
+    public Task<int> ProcessAsync(string correlationId, CancellationToken ct = default) =>
+        ProcessAsync("new", correlationId, ct);
 
-    public async Task<int> ProcessAsync(
-        string requestType,
-        string correlationId,
-        CancellationToken cancellationToken = default)
+    public async Task<int> ProcessAsync(string requestType, string correlationId, CancellationToken ct = default)
     {
-        if (requestType != NewRequestType &&
-            requestType != RetryRequestType)
-        {
-            throw new ArgumentException(
-                "RequestType must be 'new' or 'retry'.",
-                nameof(requestType));
-        }
+        if (requestType is not ("new" or "retry"))
+            throw new ArgumentException("requestType must be 'new' or 'retry'.", nameof(requestType));
 
         correlationId = string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.NewGuid().ToString("N")
-            : correlationId.Trim();
-
+            ? Guid.NewGuid().ToString("N") : correlationId.Trim();
         int messageCount = GetMessageCount(requestType);
+        Uri sfEndpoint = BuildEndpoint("SalesforceHost", "SalesforceIrMessagesPath");
+        Uri mxEndpoint = BuildEndpoint("MaximoHost", "MaximoValvesPath");
 
-        Uri salesforceEndpoint = BuildEndpoint(
-            "SalesforceHost", "SalesforceIrMessagesPath");
+        ct.ThrowIfCancellationRequested();
+        string token = await _salesforceService.GetSalesforceTokenAsync(correlationId);
+        List<SalesforceIrMessage> messages = await GetMessagesAsync(
+            sfEndpoint, token, requestType, messageCount, correlationId, ct);
 
-        Uri maximoEndpoint = BuildEndpoint(
-            "MaximoHost", "MaximoValvesPath");
-
-        string token =
-            await _salesforceService.GetSalesforceTokenAsync(
-                correlationId);
-
-        List<SalesforceIrMessage> messages =
-            await GetMessagesAsync(
-                salesforceEndpoint,
-                token,
-                requestType,
-                messageCount,
-                correlationId,
-                cancellationToken);
-
-        List<SalesforceIrMessageUpdate> updates = [];
-        HashSet<string> processedIds = new(StringComparer.Ordinal);
-
-        int succeeded = 0;
-        int failed = 0;
-        int unknown = 0;
+        List<SalesforceIrMessageUpdate> updates = new();
+        HashSet<string> seenIds = new(StringComparer.Ordinal);
+        int success = 0, failed = 0, unknown = 0;
 
         foreach (SalesforceIrMessage message in messages)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            string? recordId = message.Id?.Trim();
-
-            if (string.IsNullOrWhiteSpace(recordId))
+            ct.ThrowIfCancellationRequested();
+            string? id = message.Id?.Trim();
+            if (string.IsNullOrWhiteSpace(id) || !seenIds.Add(id))
             {
                 failed++;
-                _logger.LogError(
-                    "IRMessage missing Id. CorrelationId: {CorrelationId}",
-                    correlationId);
-                continue;
-            }
-
-            if (!processedIds.Add(recordId))
-            {
-                failed++;
-                _logger.LogError(
-                    "Duplicate IRMessage Id: {RecordId}",
-                    recordId);
+                _logger.LogError("Missing or duplicate IRMessage Id. CorrelationId: {CorrelationId}", correlationId);
                 continue;
             }
 
             try
             {
                 if (message.Request is null)
+                    throw new InvalidOperationException("NG_Request__c is missing.");
+
+                string source = message.Request.ToJsonString();
+                _payloadLogger.LogPayload("Salesforce", "IRMessages transformation", "Input", source, correlationId, id);
+                string normalized = SalesforceIrMessageNormalizer.Normalize(source);
+                string maximoPayload = SalesforceToMaximoStatusTransformer.Transform(normalized, correlationId);
+                using (JsonDocument parsed = JsonDocument.Parse(maximoPayload))
                 {
-                    throw new InvalidOperationException(
-                        "NG_Request__c is missing.");
+                    if (parsed.RootElement.ValueKind != JsonValueKind.Object)
+                        throw new InvalidOperationException("Maximo POST requires one JSON object.");
                 }
-
-                string sourcePayload = message.Request.ToJsonString();
-
-                _payloadLogger.LogPayload(
-                    "Salesforce", "IRMessages Transformation",
-                    "Before", sourcePayload, correlationId, recordId);
-
-                string normalized =
-                    SalesforceIrMessageNormalizer.Normalize(
-                        sourcePayload);
-
-                string maximoPayload =
-                    SalesforceToMaximoStatusTransformer.Transform(
-                        normalized, correlationId);
-
-                using (JsonDocument doc = JsonDocument.Parse(maximoPayload))
-                {
-                    if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                    {
-                        throw new InvalidOperationException(
-                            "Maximo POST requires one JSON object.");
-                    }
-                }
-
-                _payloadLogger.LogPayload(
-                    "Maximo", "IRMessages Transformation",
-                    "After", maximoPayload, correlationId, recordId);
-
-                await SendToMaximoAsync(
-                    maximoEndpoint,
-                    maximoPayload,
-                    recordId,
-                    correlationId,
-                    cancellationToken);
-
-                updates.Add(new SalesforceIrMessageUpdate
-                {
-                    RecordId = recordId,
-                    Status = SuccessStatus
-                });
-
-                succeeded++;
+                _payloadLogger.LogPayload("Maximo", "IRMessages transformation", "Output", maximoPayload, correlationId, id);
+                await PostMaximoAsync(mxEndpoint, maximoPayload, id, correlationId, ct);
+                updates.Add(new SalesforceIrMessageUpdate { RecordId = id, Status = "Success" });
+                success++;
             }
-            catch (OperationCanceledException)
-                when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (OperationCanceledException ex)
             {
                 unknown++;
-                _logger.LogError(
-                    ex,
-                    "IRMessage outcome unknown. RecordId: {RecordId}",
-                    recordId);
+                _logger.LogError(ex, "Maximo outcome unknown (timeout). RecordId: {RecordId}", id);
             }
-            catch (HttpRequestException ex)
-                when (ex.StatusCode is null)
+            catch (HttpRequestException ex) when (ex.StatusCode is null)
             {
                 unknown++;
-                _logger.LogError(
-                    ex,
-                    "IRMessage transport failure. RecordId: {RecordId}",
-                    recordId);
+                _logger.LogError(ex, "Maximo outcome unknown (transport failure). RecordId: {RecordId}", id);
             }
             catch (Exception ex)
             {
                 failed++;
-                _logger.LogError(
-                    ex,
-                    "IRMessage processing failed. RecordId: {RecordId}",
-                    recordId);
-
-                updates.Add(new SalesforceIrMessageUpdate
-                {
-                    RecordId = recordId,
-                    Status = FailedStatus
-                });
+                _logger.LogError(ex, "IRMessage failed. RecordId: {RecordId}, CorrelationId: {CorrelationId}", id, correlationId);
+                updates.Add(new SalesforceIrMessageUpdate { RecordId = id, Status = "Failed" });
             }
         }
 
         if (updates.Count > 0)
-        {
-            await PatchSalesforceAsync(
-                salesforceEndpoint,
-                token,
-                updates,
-                correlationId,
-                cancellationToken);
-        }
+            await PatchSalesforceAsync(sfEndpoint, token, updates, correlationId, ct);
 
-        _logger.LogInformation(
-            "IRMessages completed. RequestType: {RequestType}, " +
-            "Retrieved: {Retrieved}, Success: {Success}, " +
-            "Failed: {Failed}, Unknown: {Unknown}, " +
-            "CorrelationId: {CorrelationId}",
-            requestType, messages.Count,
-            succeeded, failed, unknown, correlationId);
-
+        _logger.LogInformation("IRMessages complete. RequestType: {RequestType}, Retrieved: {Retrieved}, Success: {Success}, Failed: {Failed}, Unknown: {Unknown}, CorrelationId: {CorrelationId}",
+            requestType, messages.Count, success, failed, unknown, correlationId);
         if (failed > 0 || unknown > 0)
-        {
-            throw new InvalidOperationException(
-                $"IRMessages completed with {failed} failed and " +
-                $"{unknown} unknown records. CorrelationId: {correlationId}");
-        }
-
-        return succeeded;
+            throw new InvalidOperationException($"IRMessages had {failed} failed and {unknown} unknown records. CorrelationId: {correlationId}");
+        return success;
     }
 
-    private async Task<List<SalesforceIrMessage>> GetMessagesAsync(
-        Uri endpoint,
-        string token,
-        string requestType,
-        int messageCount,
-        string correlationId,
-        CancellationToken ct)
+    private async Task<List<SalesforceIrMessage>> GetMessagesAsync(Uri endpoint, string token,
+        string requestType, int messageCount, string correlationId, CancellationToken ct)
     {
-        UriBuilder uri = new(endpoint)
+        UriBuilder builder = new(endpoint)
         {
-            Query = $"requestType={Uri.EscapeDataString(requestType)}" +
-                    $"&messageCount={messageCount.ToString(CultureInfo.InvariantCulture)}"
+            Query = $"requestType={Uri.EscapeDataString(requestType)}&messageCount={messageCount.ToString(CultureInfo.InvariantCulture)}"
         };
-
-        using HttpRequestMessage request =
-            CreateRequest(HttpMethod.Get, uri.Uri, token, correlationId);
-
-        _payloadLogger.LogPayload(
-            "Salesforce", "IRMessages GET", "Request",
-            JsonSerializer.Serialize(new
-            {
-                requestType,
-                messageCount
-            }), correlationId);
-
-        using HttpResponseMessage response =
-            await _httpClient.SendAsync(request, ct);
-
+        using HttpRequestMessage request = SalesforceRequest(HttpMethod.Get, builder.Uri, token, correlationId);
+        _payloadLogger.LogPayload("Salesforce", "IRMessages GET", "Request parameters",
+            JsonSerializer.Serialize(new { requestType, messageCount }), correlationId);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
         string body = await response.Content.ReadAsStringAsync(ct);
-
-        _payloadLogger.LogPayload(
-            "Salesforce", "IRMessages GET", "Response",
-            body, correlationId);
-
+        _payloadLogger.LogPayload("Salesforce", "IRMessages GET", "Response", body, correlationId);
         EnsureSuccess(response, "Salesforce GET", correlationId);
-
-        if (string.IsNullOrWhiteSpace(body))
-        {
-            throw new InvalidOperationException(
-                "Salesforce GET returned an empty response.");
-        }
-
         try
         {
-            return JsonSerializer.Deserialize<List<SalesforceIrMessage>>(
-                body, JsonOptions)
-                ?? throw new InvalidOperationException(
-                    "Salesforce GET returned null.");
+            return JsonSerializer.Deserialize<List<SalesforceIrMessage>>(body, JsonOptions)
+                ?? throw new InvalidOperationException("Salesforce GET returned JSON null.");
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException(
-                "Salesforce GET returned invalid JSON.", ex);
+            throw new InvalidOperationException("Salesforce GET returned invalid JSON.", ex);
         }
     }
 
-    private async Task SendToMaximoAsync(
-        Uri endpoint,
-        string payload,
-        string recordId,
-        string correlationId,
-        CancellationToken ct)
+    private async Task PostMaximoAsync(Uri endpoint, string payload, string recordId,
+        string correlationId, CancellationToken ct)
     {
-        string basicAuth = GetRequiredConfig("MaximoBasicAuth");
-
-        if (basicAuth.StartsWith(
-                "Basic ", StringComparison.OrdinalIgnoreCase))
-        {
-            basicAuth = basicAuth["Basic ".Length..].Trim();
-        }
-
-        using HttpRequestMessage request =
-            new(HttpMethod.Post, endpoint);
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue("Basic", basicAuth);
-
-        request.Headers.TryAddWithoutValidation(
-            "x-correlation-id", correlationId);
-
-        request.Headers.Accept.Add(
-            new MediaTypeWithQualityHeaderValue("application/json"));
-
-        request.Content =
-            new StringContent(payload, Encoding.UTF8, "application/json");
-
-        _payloadLogger.LogPayload(
-            "Maximo", "WorkOrder Status POST", "Request",
-            payload, correlationId, recordId);
-
-        using HttpResponseMessage response =
-            await _httpClient.SendAsync(request, ct);
-
+        using HttpRequestMessage request = new(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", GetBasicAuth());
+        request.Headers.TryAddWithoutValidation("x-correlation-id", correlationId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        _payloadLogger.LogPayload("Maximo", "WorkOrder Status POST", "Request", payload, correlationId, recordId);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
         string body = await response.Content.ReadAsStringAsync(ct);
-
-        _payloadLogger.LogPayload(
-            "Maximo", "WorkOrder Status POST", "Response",
-            body, correlationId, recordId);
-
-        EnsureSuccess(response, "Maximo POST", correlationId);
+        _payloadLogger.LogPayload("Maximo", "WorkOrder Status POST", "Response", body, correlationId, recordId);
+        EnsureSuccess(response, "Maximo POST", correlationId, recordId);
     }
 
-    private async Task PatchSalesforceAsync(
-        Uri endpoint,
-        string token,
-        IReadOnlyCollection<SalesforceIrMessageUpdate> updates,
-        string correlationId,
-        CancellationToken ct)
+    private async Task PatchSalesforceAsync(Uri endpoint, string token,
+        IReadOnlyCollection<SalesforceIrMessageUpdate> updates, string correlationId, CancellationToken ct)
     {
+        // A collection always serializes to an array, including when it contains one record.
         string payload = JsonSerializer.Serialize(updates, JsonOptions);
-
-        using HttpRequestMessage request =
-            CreateRequest(HttpMethod.Patch, endpoint, token, correlationId);
-
-        request.Content =
-            new StringContent(payload, Encoding.UTF8, "application/json");
-
-        _payloadLogger.LogPayload(
-            "Salesforce", "IRMessages PATCH", "Request",
-            payload, correlationId);
-
-        using HttpResponseMessage response =
-            await _httpClient.SendAsync(request, ct);
-
+        using HttpRequestMessage request = SalesforceRequest(HttpMethod.Patch, endpoint, token, correlationId);
+        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        _payloadLogger.LogPayload("Salesforce", "IRMessages PATCH", "Request", payload, correlationId);
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, ct);
         string body = await response.Content.ReadAsStringAsync(ct);
-
-        _payloadLogger.LogPayload(
-            "Salesforce", "IRMessages PATCH", "Response",
-            body, correlationId);
-
+        _payloadLogger.LogPayload("Salesforce", "IRMessages PATCH", "Response", body, correlationId);
         EnsureSuccess(response, "Salesforce PATCH", correlationId);
+        ValidatePatchResponse(body, updates);
     }
 
-    private static HttpRequestMessage CreateRequest(
-        HttpMethod method,
-        Uri endpoint,
-        string token,
-        string correlationId)
+    private static void ValidatePatchResponse(string body, IReadOnlyCollection<SalesforceIrMessageUpdate> updates)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return;
+        using JsonDocument document = JsonDocument.Parse(body);
+        if (document.RootElement.ValueKind != JsonValueKind.Object)
+            throw new InvalidOperationException("Unexpected Salesforce PATCH response shape.");
+        JsonElement root = document.RootElement;
+        if (root.TryGetProperty("failedRecords", out JsonElement failures) &&
+            failures.ValueKind == JsonValueKind.Array && failures.GetArrayLength() > 0)
+            throw new InvalidOperationException("Salesforce PATCH reported record-level failures.");
+        if (!root.TryGetProperty("successfulRecords", out JsonElement successes)) return;
+        if (successes.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Salesforce PATCH successfulRecords must be an array.");
+        HashSet<string> acknowledged = new(StringComparer.Ordinal);
+        foreach (JsonElement item in successes.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                !item.TryGetProperty("recordId", out JsonElement id) ||
+                id.ValueKind != JsonValueKind.String ||
+                string.IsNullOrWhiteSpace(id.GetString()) || !acknowledged.Add(id.GetString()!))
+                throw new InvalidOperationException("Invalid Salesforce PATCH successfulRecords entry.");
+        }
+        if (acknowledged.Count != updates.Count || updates.Any(u => !acknowledged.Contains(u.RecordId)))
+            throw new InvalidOperationException("Salesforce PATCH did not acknowledge every submitted record.");
+    }
+
+    private static HttpRequestMessage SalesforceRequest(HttpMethod method, Uri endpoint,
+        string token, string correlationId)
     {
         HttpRequestMessage request = new(method, endpoint);
-
-        request.Headers.Authorization =
-            new AuthenticationHeaderValue("Bearer", token);
-
-        request.Headers.TryAddWithoutValidation(
-            "x-correlation-id", correlationId);
-
-        request.Headers.Accept.Add(
-            new MediaTypeWithQualityHeaderValue("application/json"));
-
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.TryAddWithoutValidation("x-correlation-id", correlationId);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }
 
-    private static void EnsureSuccess(
-        HttpResponseMessage response,
-        string operation,
-        string correlationId)
+    private static void EnsureSuccess(HttpResponseMessage response, string operation,
+        string correlationId, string? recordId = null)
     {
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"{operation} failed. " +
-                $"StatusCode: {(int)response.StatusCode}. " +
-                $"CorrelationId: {correlationId}",
-                null,
-                response.StatusCode);
-        }
+        if (response.IsSuccessStatusCode) return;
+        throw new HttpRequestException(
+            $"{operation} failed. HTTP {(int)response.StatusCode}. RecordId: {recordId ?? "N/A"}. CorrelationId: {correlationId}",
+            null, response.StatusCode);
     }
 
     private int GetMessageCount(string requestType)
     {
-        string key = requestType == NewRequestType
-            ? "SalesforceIrNewMessageCount"
-            : "SalesforceIrRetryMessageCount";
-
-        if (!int.TryParse(
-                GetRequiredConfig(key),
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out int count) ||
-            count <= 0)
-        {
-            throw new InvalidOperationException(
-                $"Invalid message count configuration: {key}");
-        }
-
+        string key = requestType == "new" ? "SalesforceIrNewMessageCount" : "SalesforceIrRetryMessageCount";
+        if (!int.TryParse(Required(key), NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) || count <= 0)
+            throw new InvalidOperationException($"Invalid message count: {key}");
         return count;
     }
 
     private Uri BuildEndpoint(string hostKey, string pathKey)
     {
-        string host = GetRequiredConfig(hostKey);
-        string path = GetRequiredConfig(pathKey);
+        string host = Required(hostKey);
+        string path = Required(pathKey);
+        if (!Uri.TryCreate(host, UriKind.Absolute, out Uri? baseUri) ||
+            baseUri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(baseUri.Query) || !string.IsNullOrEmpty(baseUri.Fragment) ||
+            !path.StartsWith('/') || path.StartsWith("//") || path.Contains('?') || path.Contains('#'))
+            throw new InvalidOperationException($"Invalid endpoint configuration: {hostKey}/{pathKey}");
+        string combined = $"{host.TrimEnd('/')}/{path.TrimStart('/')}";
+        if (!Uri.TryCreate(combined, UriKind.Absolute, out Uri? uri) || uri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException($"Invalid HTTPS endpoint: {hostKey}/{pathKey}");
+        return uri;
+    }
 
-        if (!Uri.TryCreate(
-                host, UriKind.Absolute, out Uri? baseUri) ||
-            baseUri.Scheme != Uri.UriSchemeHttps
+    private string GetBasicAuth()
+    {
+        string value = Required("MaximoBasicAuth");
+        if (value.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+            value = value["Basic ".Length..].Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException("MaximoBasicAuth is empty.");
+        return value;
+    }
+
+    private string Required(string key)
+    {
+        string? value = _configuration[key];
+        return string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"Missing required configuration: {key}")
+            : value.Trim();
+    }
+}
